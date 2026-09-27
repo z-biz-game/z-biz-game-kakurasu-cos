@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The rule, the solver, the generator and the shipped pool are all pure ES modules: no
+  # browser and no install step. Two rows are the reason this job exists:
+  #   * anchor.test.mjs — the whole 4x4 space is enumerated and the four measured anchors are
+  #     reproduced against hand-typed expectations: 65536 boards partition into 64959 clue
+  #     classes by two independent routes, 64382 of them unique and 577 multiple, and the
+  #     subset DP agrees with the cell-by-cell backtracker on 400 sampled classes;
+  #   * lots.test.mjs — re-counts and re-measures every row in js/data/lots.js, so a
+  #     hand-edited `solutions`/`depth` or a stale bake fails the build instead of shipping.
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax
+        run: for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check "$f"; done
+      - name: Suites
+        run: for f in test/*.test.mjs; do echo "::group::$f"; node "$f"; echo "::endgroup::"; done
+
+  # The shell is only proven by driving a real page with real mouse events: the canvas hit
+  # test, the over-sum rule, the drag-to-paint run and the save file live behind `window.kakurasu`.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Headless playtest
+        env:
+          SKIP_UNIT: 1
+          WD_TIMEOUT: 240
+        run: bash tools/verify.sh

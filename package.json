@@ -1,0 +1,39 @@
+{
+  "name": "kakurasu",
+  "version": "1.0.0",
+  "description": "数和 · KAKURASU — 浏览器原生数和格。难度数字是解数与推理深度，由两条互相独立的计数器和一个确定性求解器量出来；4×4 全空间 65536 / 64959 / 64382 / 577 已逐位对账。",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "node server.cjs",
+    "dev": "node server.cjs 5192",
+    "electron": "electron .",
+    "bake": "node tools/bake.mjs",
+    "check": "for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done && echo OK",
+    "unit": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done",
+    "test": "npm run check && npm run unit",
+    "verify": "bash tools/verify.sh"
+  },
+  "keywords": [
+    "game",
+    "puzzle",
+    "kakurasu",
+    "数和",
+    "logic-puzzle",
+    "solution-count",
+    "unique-solution",
+    "zero-dependency",
+    "electron"
+  ],
+  "author": "z-biz-game",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "build": {
+    "appId": "com.zbiz.kakurasu",
+    "productName": "Kakurasu",
+    "mac": { "category": "public.app-category.puzzle-games" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}

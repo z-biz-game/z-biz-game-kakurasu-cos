@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<meta name="description" content="数和格 Kakurasu：每行每列带权和等于线索。屏上印的解数由两条互相独立的计数器算出来，4×4 全空间 65536 个棋盘已逐位对过账。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2314161a'/%3E%3Crect%20x='5'%20y='5'%20width='10'%20height='10'%20fill='%23d8a13c'/%3E%3Crect%20x='17'%20y='17'%20width='10'%20height='10'%20fill='%2378dcff'/%3E%3C/svg%3E">
+<title>数和 · KAKURASU</title>
+<link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+<header class="topbar">
+  <h1 class="brand"><span class="brand-mark">▦</span>数和<small>KAKURASU</small></h1>
+  <nav class="modes" id="modes" aria-label="模式">
+    <button type="button" data-mode="campaign">战役</button>
+    <button type="button" data-mode="daily">每日</button>
+    <button type="button" data-mode="random">随机</button>
+  </nav>
+  <p class="totals" id="totals"></p>
+</header>
+
+<main class="stage">
+  <section class="board">
+    <canvas id="grid" aria-label="数和格棋盘：行列带权和等于线索"></canvas>
+    <p class="hint-line" id="hintline"></p>
+    <div class="curtain" id="curtain" hidden>
+      <div class="curtain-card">
+        <p class="stars" id="stars"></p>
+        <h2 id="verdict"></h2>
+        <p class="tally" id="tally"></p>
+        <div class="curtain-actions">
+          <button type="button" id="again">再来一次</button>
+          <button type="button" id="next" class="primary">下一关</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <p class="crumbs" id="crumbs"></p>
+    <dl class="readout" id="readout"></dl>
+    <div class="controls">
+      <button type="button" id="undo">撤销</button>
+      <button type="button" id="note" aria-pressed="false">标记</button>
+      <button type="button" id="hint">提示</button>
+      <button type="button" id="restart">重开</button>
+      <button type="button" id="share">分享</button>
+    </div>
+    <div class="shelf" id="shelf"></div>
+    <details class="about">
+      <summary>这一关的数字从哪来</summary>
+      <p>每行/每列的线索是<em>带权</em>和：格子的行权是它的列号，列权是它的行号。<code>js/core/count.js</code>
+      里有两条互相独立的解数计数器（逐行子集 DP、逐格回溯），题面必须两条都数出 <b>1</b> 才会发布。</p>
+      <p>这件事有外部锚点：4×4 的全部 <code>2^16 = 65536</code> 个棋盘按线索对归类，类大小之和恰为 65536，
+      共 <code>64959</code> 类（两条独立数法一致），其中 <code>64382</code> 类唯一解、<code>577</code> 类多解。
+      逐条复现在 <code>node test/anchor.test.mjs</code>，期望值是手写的。</p>
+      <p>难度不是尺寸标签：屏上的<em>推理</em>数字是 <code>js/core/logic.js</code> 那个确定性求解器实测的
+      假设层数 ×100 + 传播轮数，<code>tools/bake.mjs</code> 从序列化线索对重算一遍才对账。</p>
+      <p class="save">成绩只存在这台设备的浏览器里。<button type="button" id="wipe">清空存档</button></p>
+    </details>
+  </aside>
+</main>
+
+<p class="toast" id="toast" hidden></p>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
