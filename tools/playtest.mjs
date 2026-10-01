@@ -372,17 +372,18 @@ async function pointerScenario(cdp, sessionId, runJS) {
   rec('a note crosses the cell out without paying anything', noted.cells[5] === 2 && noted.taps === 1 && noted.sums.rows[1].sum === 0 && noted.sums.cols[1].sum === 0, { cell: noted.cells[5], sums: noted.sums.rows[1] });
   await runJS(`window.kakurasu.toggleNote(false); 'ok'`);
 
-  // Keyboard shortcuts the panel advertises: u (undo), h (hint), r (restart), n (note).
+  // Keyboard shortcuts the panel advertises: u (undo), g (hint), r (restart), n (note),
+  // h (玩法说明), p (暂停). 提示从 h 挪到 g，因为规范把 H/? 判给教学面。
   await runJS(`document.getElementById('restart').click(); 'ok'`);
   await sleep(200);
   await runJS(`window.kakurasu.play([0]); 'ok'`);
   await key('u');
   await sleep(220);
   rec('the u key undoes', (await runJS('window.kakurasu.cells()')).every((v) => v === 0), await runJS('window.kakurasu.cells()'));
-  await key('h');
+  await key('g');
   await sleep(220);
   const hinted = await runJS(`(() => { const g = window.kakurasu; return { hints: g.state.hints, said: document.getElementById('hintline').textContent }; })()`);
-  rec('the h key asks for a hint that names a cell or admits a guess', hinted.hints === 1 && /(提示)/.test(hinted.said), hinted);
+  rec('the g key asks for a hint that names a cell or admits a guess', hinted.hints === 1 && /(提示)/.test(hinted.said), hinted);
   await runJS(`window.kakurasu.play(window.kakurasu.answer().slice(0, 3)); 'ok'`);
   await key('r');
   await sleep(220);
@@ -393,6 +394,21 @@ async function pointerScenario(cdp, sessionId, runJS) {
   await key('n');
   await sleep(150);
   rec('and toggles it back', (await runJS('window.kakurasu.state.noteMode')) === false, await runJS('window.kakurasu.state.noteMode'));
+  await key('h');
+  await sleep(150);
+  const opened = await runJS(`(() => { const g = window.kakurasu; return { open: g.state.helpOpen, hidden: document.getElementById('helpcard').hidden, phase: g.state.phase }; })()`);
+  rec('the h key opens the how-to overlay', opened.open === true && opened.hidden === false && opened.phase === 'HELP', opened);
+  await key('h');
+  await sleep(150);
+  const closed = await runJS(`(() => { const g = window.kakurasu; return { open: g.state.helpOpen, hidden: document.getElementById('helpcard').hidden }; })()`);
+  rec('and the second h closes it', closed.open === false && closed.hidden === true, closed);
+  await key('p');
+  await sleep(150);
+  const paused = await runJS(`(() => { const g = window.kakurasu; return { p: g.state.paused, phase: g.state.phase, curtain: g.state.curtain }; })()`);
+  rec('the p key pauses', paused.p === true && paused.phase === 'PAUSED', paused);
+  await key('p');
+  await sleep(150);
+  rec('and the second p resumes', (await runJS('window.kakurasu.state.paused')) === false, await runJS('window.kakurasu.state.phase'));
 
   return { rows };
 }

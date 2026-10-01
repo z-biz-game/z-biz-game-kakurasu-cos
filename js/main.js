@@ -21,6 +21,9 @@ import { SOLVER_NODE_CAP } from './core/make.js';
 import { formatGrid, markCount } from './core/grid.js';
 import { todayKey } from './core/rng.js';
 import { createView } from './view.js';
+import { audio } from './audio.js';
+import { readSettings, writeSettings } from './settings.js';
+import { registerServiceWorker } from './pwa.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -29,6 +32,9 @@ const el = {
   verdict: $('verdict'), tally: $('tally'), undo: $('undo'), note: $('note'), hint: $('hint'),
   restart: $('restart'), share: $('share'), next: $('next'), again: $('again'),
   toast: $('toast'), canvas: $('grid'), wipe: $('wipe'),
+  pause: $('pause'), sound: $('sound'), fullscreen: $('fullscreen'), help: $('help'),
+  helpcard: $('helpcard'), helpclose: $('helpclose'), pausecard: $('pausecard'),
+  resume: $('resume'), pausetally: $('pausetally'), hud: $('hud'),
 };
 
 const LEVELS = ALL.length;
@@ -42,6 +48,9 @@ const app = {
   hints: 0,
   label: '',
   day: null,
+  paused: false,
+  helpOpen: false,
+  sw: { status: 'pending', reason: '' },
 };
 
 function clampIndex(n) {
@@ -106,11 +115,22 @@ function parseSolution(text, r, c) {
 const view = createView(el.canvas, {
   onTap: (pos, note) => commit(pos, note),
   onIllegal: (pos, why) => {
+    audio.blip('bad');
     if (why === 'done') say('这一关已经解开了 —— 盘面锁定');
     else say(`第 <b>${Math.floor(pos / app.game.c) + 1}</b> 行第 <b>${(pos % app.game.c) + 1}</b> 列现在不能这么点`);
   },
   onPaint: () => {},
+  // 读数是仿真时长的显示器：0.1 仿真秒一次，暂停时 simClock 不推进所以它也不动。
+  onFrame: (clock) => {
+    const node = el.readout.querySelector('#clockval');
+    if (node) node.textContent = fmtClock(clock);
+  },
 });
+
+function fmtClock(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 
 function setGame(lot, label) {
   app.lot = lot;
@@ -130,8 +150,8 @@ function starText(n) {
   return '★'.repeat(n) + '☆'.repeat(3 - n);
 }
 
-function field(label, value, note, cls = '') {
-  return `<div class="${cls}"><dt>${label}</dt><dd>${value}</dd><dt><small>${note}</small></dt></div>`;
+function field(label, value, note, cls = '', id = '') {
+  return `<div class="${cls}"><dt>${label}</dt><dd${id ? ` id="${id}"` : ''}>${value}</dd><dt><small>${note}</small></dt></div>`;
 }
 
 function renderCrumbs() {
@@ -144,6 +164,7 @@ function renderCrumbs() {
     field('解数', app.lot.solutions, '两条计数器算出', 'sols'),
     field('推理', app.lot.rank, `深度 ${app.lot.depth} · 轮数 ${app.lot.chains}`, 'best'),
     field('超和', overLines(app.game), '行或列已越过线索', 'over'),
+    field('用时', fmtClock(view.fx().simClock), '暂停即冻结', '', 'clockval'),
     field('最佳', rec && rec.best ? rec.best : '—', rec && rec.perfect ? '等于最少' : '你的纪录'),
   ].join('');
   el.undo.disabled = !app.game.history.length || app.game.done;
@@ -233,6 +254,9 @@ function commit(pos, note) {
     view.redraw();
     return false;
   }
+  audio.unlock(); // 这里在用户手势的调用栈上：上下文要在此刻建起来，否则第一次出声会被策略吞掉
+  const v = app.game.cells[pos];
+  audio.blip(v === NOTE ? 'mark' : v === ON ? 'tap' : 'undo');
   if (app.game.done) finish();
   else {
     view.redraw();
@@ -250,6 +274,7 @@ function commit(pos, note) {
 function finish() {
   const lot = app.lot;
   const g = app.game;
+  audio.blip('win');
   const rec = store.solve(lot.id, { taps: g.taps, par: g.par, hints: app.hints });
   if (app.day) store.markDaily(app.day, lot.id);
   let nextIndex = 0;
@@ -322,6 +347,8 @@ el.modes.addEventListener('click', (ev) => {
 
 el.undo.addEventListener('click', () => {
   if (undo(app.game)) {
+    audio.unlock();
+    audio.blip('undo');
     view.redraw();
     renderCrumbs();
     if (!app.game.history.length) say('回到起点');
@@ -338,6 +365,8 @@ el.note.addEventListener('click', () => {
 el.hint.addEventListener('click', () => {
   const h = nextDeduction(app.lot, app.game.cells);
   app.hints += 1;
+  audio.unlock();
+  audio.blip('hint');
   if (h.contradiction) {
     say('提示说：这一盘已经自相矛盾了 —— 有行的带权和越过了线索，先撤销');
   } else if (h.complete) {
@@ -353,10 +382,15 @@ el.hint.addEventListener('click', () => {
   renderCrumbs();
 });
 
+// 重开不是"再调一次 init()"。要复位的清单：格子、点击数、撤销栈、提示用量、结算弹层、
+// 暂停态、以及 view 里的涟漪/提示/累加器/仿真时钟 —— 漏掉最后一组，下一局会带着上一局的
+// 粒子与时钟起跑，屏上的"用时"就成了两个局的和。
 function restart() {
   reset(app.game);
   app.hints = 0;
   el.curtain.hidden = true;
+  setPaused(false);
+  view.resetFx();
   view.redraw();
   render();
   say('回到起点');
@@ -366,6 +400,86 @@ el.restart.addEventListener('click', restart);
 el.share.addEventListener('click', shareLink);
 el.again.addEventListener('click', restart);
 el.next.addEventListener('click', () => go(`#/c/${Math.min(LEVELS, app.index + 1)}`));
+
+// ---- 暂停：view 的 frame 里整段跳过仿真推进（累加器清零），盘面无条件拒收点按；
+// 恢复后格子、撤销栈、提示用量都还在，只有时间被冻住过。
+function setPaused(on) {
+  app.paused = !!on && !(app.game && app.game.done);
+  view.setPaused(app.paused);
+  audio.setPaused(app.paused);
+  el.pausecard.hidden = !app.paused;
+  el.pause.setAttribute('aria-pressed', String(app.paused));
+  el.pause.textContent = app.paused ? '继续' : '暂停';
+  if (app.paused) {
+    const fx = view.fx();
+    el.pausetally.innerHTML = `已用 <b>${fmtClock(fx.simClock)}</b> · 点击 <b>${app.game ? app.game.taps : 0}</b> · 仿真步 <b>${fx.simSteps}</b>`;
+  }
+  return app.paused;
+}
+
+const togglePause = () => setPaused(!app.paused);
+el.pause.addEventListener('click', togglePause);
+el.resume.addEventListener('click', () => setPaused(false));
+
+// ---- 静音：真静音（挂起上下文 + 不建振荡器），偏好落盘见 js/settings.js
+function setMuted(on) {
+  const m = audio.setMuted(!!on);
+  el.sound.setAttribute('aria-pressed', String(!m));
+  el.sound.textContent = m ? '静音' : '音效';
+  writeSettings({ muted: m });
+  return m;
+}
+
+const toggleMute = () => setMuted(!audio.muted);
+el.sound.addEventListener('click', toggleMute);
+
+// ---- 全屏：目标元素是 documentElement，按钮是 HUD 里真实存在的 #fullscreen
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function toggleFullscreen() {
+  if (isFullscreen()) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!exit) return false;
+    const p = exit.call(document);
+    if (p && typeof p.catch === 'function') p.catch(() => toast('退出全屏没被允许'));
+    return false;
+  }
+  const root = document.documentElement;
+  const req = root.requestFullscreen || root.webkitRequestFullscreen;
+  if (!req) {
+    toast('这个浏览器不支持全屏');
+    return false;
+  }
+  const p = req.call(root);
+  if (p && typeof p.catch === 'function') p.catch(() => toast('全屏没被允许（要由用户手势发起）'));
+  return true;
+}
+
+function syncFullscreen() {
+  const on = isFullscreen();
+  el.fullscreen.setAttribute('aria-pressed', String(on));
+  el.fullscreen.textContent = on ? '退出全屏' : '全屏';
+  return on;
+}
+
+el.fullscreen.addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', syncFullscreen);
+document.addEventListener('webkitfullscreenchange', syncFullscreen);
+
+// ---- 玩法说明：首启自动开一次，看过写进偏好；H 或 ? 随时可开
+function setHelp(on) {
+  app.helpOpen = !!on;
+  el.helpcard.hidden = !app.helpOpen;
+  el.help.setAttribute('aria-pressed', String(app.helpOpen));
+  if (!app.helpOpen) writeSettings({ helpSeen: true });
+  return app.helpOpen;
+}
+
+el.help.addEventListener('click', () => setHelp(!app.helpOpen));
+el.helpclose.addEventListener('click', () => setHelp(false));
+el.helpcard.addEventListener('click', (ev) => { if (ev.target === el.helpcard) setHelp(false); });
 
 // Wiping the save is the one destructive thing this game can do, so it asks twice instead of
 // firing on a stray click.
@@ -385,14 +499,42 @@ el.wipe.addEventListener('click', () => {
 
 window.addEventListener('hashchange', apply);
 window.addEventListener('resize', () => view.measure());
+
+// 键位表（弹层里也认，方便只用键盘的人）：
+//   Enter/Space 开始或继续 · P 暂停 · R 重开 · U 撤销 · N 标记 · G 提示
+//   M 静音 · F 全屏 · H 或 ? 玩法 · Esc 关闭弹层
+// 焦点停在某个按钮上时**不抢** Enter/Space —— 那是浏览器要用来"按下这个按钮"的键，
+// 抢了就会出现"按一次触发两件事"。
+function closeTopOverlay() {
+  if (app.helpOpen) return setHelp(false);
+  if (app.paused) return setPaused(false);
+  if (!el.curtain.hidden) { el.curtain.hidden = true; return true; }
+  return false;
+}
+
 window.addEventListener('keydown', (ev) => {
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-  const k = ev.key.toLowerCase();
-  if (k === 'escape' && !el.curtain.hidden) el.curtain.hidden = true;
-  else if (k === 'u') el.undo.click();
-  else if (k === 'h') el.hint.click();
-  else if (k === 'r') el.restart.click();
-  else if (k === 'n') el.note.click();
+  const k = ev.key === ' ' ? 'space' : String(ev.key).toLowerCase();
+  const onButton = document.activeElement && document.activeElement.tagName === 'BUTTON';
+  if (k === 'escape') { closeTopOverlay(); return; }
+  if (app.helpOpen && k !== 'h' && k !== '?' && k !== 'space' && k !== 'enter') return;
+  if (k === '?' || k === 'h') { ev.preventDefault(); setHelp(!app.helpOpen); return; }
+  if (k === 'space' || k === 'enter') {
+    if (onButton) return;
+    ev.preventDefault();
+    audio.unlock();
+    if (app.helpOpen) setHelp(false);
+    else if (app.paused) setPaused(false);
+    else if (!el.curtain.hidden) restart(); // 结算屏上的 Enter = 再来一次
+    return;
+  }
+  if (k === 'p') { ev.preventDefault(); togglePause(); }
+  else if (k === 'r') { ev.preventDefault(); restart(); }
+  else if (k === 'u') { ev.preventDefault(); el.undo.click(); }
+  else if (k === 'n') { ev.preventDefault(); el.note.click(); }
+  else if (k === 'g') { ev.preventDefault(); el.hint.click(); }
+  else if (k === 'm') { ev.preventDefault(); toggleMute(); }
+  else if (k === 'f') { ev.preventDefault(); toggleFullscreen(); }
 });
 
 view.start();
@@ -400,6 +542,14 @@ view.start();
 // the same loop, and a tab that reports itself hidden (headless Chrome does) must still be able
 // to finish a level.
 apply();
+// 静音是设备偏好，启动就得恢复成屏上读得到的样子（按钮标红 + 上下文挂起）。
+setMuted(readSettings().muted);
+syncFullscreen();
+if (!readSettings().helpSeen) setHelp(true);
+// SW 注册放在最后：它不该和首屏抢主线程，也不许在 file:// 下留一条红字。
+Promise.resolve(registerServiceWorker())
+  .then((r) => { app.sw = r || { status: 'skipped', reason: 'no-result' }; })
+  .catch((err) => { app.sw = { status: 'failed', reason: String((err && err.message) || err) }; });
 
 const api = {
   version: 1,
@@ -429,6 +579,23 @@ const api = {
       r: g && g.r,
       c: g && g.c,
       size: g && `${g.r}x${g.c}`,
+      // 窗口状态：帧率对拍与"暂停/静音到底成立没有"的判据都从这里读，不看 DOM 文本。
+      phase: app.helpOpen ? 'HELP' : (app.paused ? 'PAUSED' : (g && g.done ? 'WON' : 'PLAYING')),
+      paused: app.paused,
+      helpOpen: app.helpOpen,
+      muted: audio.muted,
+      ctxState: audio.state.ctxState,
+      audioNodes: audio.state.nodesCreated,
+      reduceMotion: view.fx().reduceMotion,
+      simClock: view.fx().simClock,
+      simSteps: view.fx().simSteps,
+      accum: view.fx().accum,
+      ripples: view.fx().ripples,
+      frames: view.fx().frames,
+      texture: view.fx().texture,
+      fullscreen: isFullscreen(),
+      sw: app.sw.status,
+      droppedRecords: store.dropped.records,
     };
   },
   get pool() { return poolStats(); },
@@ -461,6 +628,18 @@ const api = {
   noteOnce() { el.note.click(); return app.game.noteMode; },
   toggleNote(on) { if (app.game.noteMode !== !!on) el.note.click(); return app.game.noteMode; },
   reset() { restart(); return app.game.taps; },
+  // ---- 行为驱动口：harness 用这些真按一次，而不是读界面文本
+  fx() { return view.fx(); },
+  audioState() { return audio.state; },
+  pause() { return setPaused(true); },
+  resume() { return setPaused(false); },
+  togglePause() { return togglePause(); },
+  setMuted(on) { return setMuted(on); },
+  toggleMute() { return toggleMute(); },
+  toggleFullscreen() { return toggleFullscreen(); },
+  setHelp(on) { return setHelp(on); },
+  settings() { return readSettings(); },
+  blip(kind) { return audio.blip(kind); },
   cellValue(y, x) { return cellValue(app.game, y, x); },
   pixels() { return view.pixelsHash(); },
   painted() { return view.painted(); },

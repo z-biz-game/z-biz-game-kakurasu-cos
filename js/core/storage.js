@@ -27,7 +27,104 @@ function blank() {
   };
 }
 
+const MAX_BEST = 1e6; // 一关的点击数不可能到这个量级；到了就是脏数据，不是纪录
+const MAX_UNLOCKED = 1e4;
+
+function intIn(v, max) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > max) return null;
+  return n;
+}
+
+// 第二段解码的第一半：一条记录坏掉只丢这一条。`null`、缺字段、类型错、越界值各走各的分支，
+// 都不许把同一份存档里其他关卡的成绩一起带走 —— 那是"整局冻死"的成因。
+export function sanitizeRecords(raw) {
+  const out = { records: {}, dropped: 0 };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    if (raw != null) out.dropped = 1;
+    return out;
+  }
+  for (const id of Object.keys(raw)) {
+    const v = raw[id];
+    if (!v || typeof v !== 'object' || Array.isArray(v)) {
+      out.dropped += 1;
+      continue;
+    }
+    const best = intIn(v.best, MAX_BEST);
+    const plays = intIn(v.plays, MAX_BEST);
+    if (v.best !== undefined && best === null) {
+      out.dropped += 1; // best 存在但不可用：这条记录不可信，整条丢
+      continue;
+    }
+    if (!v.solved && best === null) {
+      out.dropped += 1;
+      continue;
+    }
+    out.records[id] = {
+      solved: !!v.solved,
+      best: best === null ? 0 : best,
+      plays: plays === null ? 1 : plays,
+      perfect: !!v.perfect,
+    };
+  }
+  return out;
+}
+
+// 每日槽只用来判断"今天打过没有"，坏一条不影响别的日期。
+export function sanitizeDaily(raw) {
+  const out = { daily: {}, dropped: 0 };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    if (raw != null) out.dropped = 1;
+    return out;
+  }
+  for (const day of Object.keys(raw)) {
+    const v = raw[day];
+    if (typeof v === 'string' && v.length <= 64) {
+      out.daily[day] = { id: v, at: 0 };
+      continue;
+    }
+    if (!v || typeof v !== 'object' || Array.isArray(v) || typeof v.id !== 'string') {
+      out.dropped += 1;
+      continue;
+    }
+    out.daily[day] = { id: v.id, at: Number.isFinite(Number(v.at)) ? Number(v.at) : 0 };
+  }
+  return out;
+}
+
+export function sanitizeStats(raw) {
+  const base = blank().stats;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
+  for (const k of Object.keys(base)) {
+    const n = intIn(raw[k], Number.MAX_SAFE_INTEGER);
+    if (n !== null) base[k] = n;
+  }
+  return base;
+}
+
+// 解码入口：给一份已经 JSON.parse 出来的东西（或垃圾），返回一份可直接用的存档 + 丢弃计数。
+export function decodeSave(p) {
+  const base = blank();
+  if (!p || typeof p !== 'object' || Array.isArray(p)) {
+    return { save: base, dropped: { records: 1, daily: 1 }, corrupt: true };
+  }
+  const rec = sanitizeRecords(p.records);
+  const day = sanitizeDaily(p.daily);
+  const unlocked = intIn(p.unlocked, MAX_UNLOCKED);
+  return {
+    save: {
+      records: rec.records,
+      daily: day.daily,
+      unlocked: unlocked && unlocked >= 1 ? unlocked : base.unlocked,
+      stats: sanitizeStats(p.stats),
+    },
+    dropped: { records: rec.dropped, daily: day.dropped },
+    corrupt: false,
+  };
+}
+
 let cache = null;
+let dropped = { records: 0, daily: 0 };
 
 // Throws when there is no usable localStorage. Callers decide what that means.
 export function rawBackend() {
@@ -61,18 +158,13 @@ function load() {
   if (raw) {
     try {
       const p = JSON.parse(raw);
-      if (p && typeof p === 'object') {
-        const base = blank();
-        cache = {
-          records: p.records && typeof p.records === 'object' ? p.records : base.records,
-          daily: p.daily && typeof p.daily === 'object' ? p.daily : base.daily,
-          unlocked: Number(p.unlocked) > 0 ? Number(p.unlocked) : base.unlocked,
-          stats: { ...base.stats, ...(p.stats || {}) },
-        };
-        return cache;
-      }
+      const decoded = decodeSave(p);
+      cache = decoded.save;
+      dropped = decoded.dropped;
+      return cache;
     } catch (err) {
       // A corrupt save is not worth keeping; start clean rather than crash the shell.
+      dropped = { records: 1, daily: 1 };
     }
   }
   cache = blank();
@@ -96,6 +188,8 @@ export const store = {
   get daily() { return load().daily; },
   get unlocked() { return load().unlocked; },
   get persistent() { return current() !== null; },
+  // 本次解码丢掉的条数：一条坏记录只丢那一条，这个数就是"丢了几条"的证据。
+  get dropped() { load(); return dropped; },
 
   record(id) {
     return load().records[id] || null;
@@ -152,6 +246,7 @@ export const store = {
   // screen would say "cleared" while the records came back.
   reset() {
     cache = blank();
+    dropped = { records: 0, daily: 0 };
     const ls = current();
     if (ls) {
       try {

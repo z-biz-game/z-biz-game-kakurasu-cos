@@ -2,7 +2,7 @@
 // guarded back end really throws when there is no localStorage (rather than quietly answering
 // "empty"), and a throwing localStorage still leaves a playable game.
 import { test, run, ok, eq } from '../tools/harness.mjs';
-import { store, rawBackend, SAVE_KEY } from '../js/core/storage.js';
+import { store, rawBackend, SAVE_KEY, sanitizeRecords, sanitizeDaily, decodeSave } from '../js/core/storage.js';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -277,5 +277,83 @@ test('no core module imports the DOM or another layer it should not touch', () =
 function dir2(f) {
   return join(root, 'js', 'core', f);
 }
+
+// ---- 第二段解码：坏一条只丢一条，其他成绩不许被带走 ------------------------------------------
+test('脏记录逐条丢：null / 数组 / 数字 / 缺 best / 类型错 / 越界 / 负数', () => {
+  const raw = {
+    'good-01': { solved: true, best: 12, plays: 3, perfect: true },
+    'is-null': null,
+    'is-array': [1, 2],
+    'is-number': 7,
+    'missing-best': { solved: false },
+    'best-wrong-type': { solved: true, best: 'twelve' },
+    'best-out-of-range': { solved: true, best: 9e9 },
+    'best-negative': { solved: true, best: -3 },
+    'solved-without-best': { solved: true, perfect: true },
+  };
+  const { records, dropped } = sanitizeRecords(raw);
+  eq(dropped, 7, '七条脏的该丢，两条好的该留');
+  eq(Object.keys(records).sort().join(','), 'good-01,solved-without-best');
+  eq(records['good-01'].best, 12);
+  eq(records['good-01'].plays, 3);
+  eq(records['solved-without-best'].best, 0, '通关但没记点击数：补 0，不算坏数据');
+  eq(records['solved-without-best'].plays, 1);
+});
+
+test('每日槽同样逐条：裸字符串补全，坏 id 只丢那一天', () => {
+  const d = sanitizeDaily({
+    '2026-09-27': 'twined-04',
+    '2026-09-28': { id: 'twined-05', at: 5 },
+    '2026-09-29': 42,
+    '2026-09-30': { at: 9 },
+    '2026-10-01': null,
+  });
+  eq(d.dropped, 3);
+  eq(d.daily['2026-09-27'].id, 'twined-04');
+  eq(d.daily['2026-09-27'].at, 0);
+  eq(d.daily['2026-09-28'].id, 'twined-05');
+  eq(Object.keys(d.daily).sort().join(','), '2026-09-27,2026-09-28');
+});
+
+test('第一段解码：JSON 根本不是对象时标 corrupt，但仍给出可用空档', () => {
+  for (const junk of [null, 'nope', [], 42]) {
+    const r = decodeSave(junk);
+    eq(r.corrupt, true, `${JSON.stringify(junk)} must be reported corrupt`);
+    eq(r.save.records, {});
+    eq(r.save.unlocked, 1);
+    eq(r.dropped.records, 1);
+  }
+  const clean = decodeSave({ records: { a: { solved: true, best: 4 } }, unlocked: 3, stats: { solves: 1 } });
+  eq(clean.corrupt, false);
+  eq(clean.dropped.records, 0);
+  eq(clean.save.records.a.best, 4);
+});
+
+// 同一次会话写、下一次会话读：冷导入才能真的走一遍 load()。
+const dirtyBackend = {
+  getItem: (k) => (k === SAVE_KEY ? JSON.stringify({
+    records: { 'keep-01': { solved: true, best: 9, plays: 1 }, 'junk-01': { solved: true, best: {} } },
+    unlocked: 'five',
+    stats: { solves: 'x', taps: 3 },
+  }) : null),
+  setItem: () => {},
+  removeItem: () => {},
+};
+globalThis.window = { localStorage: dirtyBackend };
+const dirty = await import('../js/core/storage.js?cold=3');
+
+test('混合脏存档进 shell 之后：好记录还在，越界与类型错各自退回默认', () => {
+  eq(dirty.store.record('keep-01').best, 9, '一条脏的没资格把同档的干净成绩带走');
+  eq(dirty.store.record('junk-01'), null, '脏记录本身不该存在');
+  eq(dirty.store.dropped.records, 1, '丢了几条要能报出来');
+  eq(dirty.store.unlocked, 1, 'unlocked: "five" 不是进度，退回第一关');
+  eq(dirty.store.stats.solves, 0, 'stats.solves: "x" 不是数字，退回 0');
+  eq(dirty.store.stats.taps, 3, '同一段里合法的字段照常生效');
+  eq(dirty.store.persistent, true);
+  const rec = dirty.store.solve('keep-01', { taps: 11, par: 9, hints: 0 });
+  eq(rec.best, 9, '脏档解码后仍可继续记账，而不是冻死');
+  eq(rec.plays, 2);
+});
+delete globalThis.window;
 
 run();
