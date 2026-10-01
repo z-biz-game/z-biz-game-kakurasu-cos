@@ -8,6 +8,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SETTINGS_KEY, defaults, readSettings, writeSettings } from '../js/settings.js';
 import { registerServiceWorker } from '../js/pwa.js';
+import { createGame, tap as tapCell } from '../js/core/game.js';
+import { at } from '../js/core/library.js';
 
 const root = new URL('..', import.meta.url).pathname;
 
@@ -271,6 +273,282 @@ test('暂停/静音/全屏/玩法四个 HUD 按钮都存在且被 main.js 绑到
   }
   ok(/requestFullscreen/.test(main), '全屏要真的调 requestFullscreen');
   ok(/matchMedia/.test(readFileSync(join(root, 'js', 'view.js'), 'utf8')), 'reduceMotion 要真的读媒体查询');
+});
+
+// ---- view：reduceMotion 与输入回落（把 view 要的几个全局补上，node 里就能跑）--------------------
+let viewSeq = 0;
+function makeWorld({ matches = false, pointer = true } = {}) {
+  const listeners = new Map();
+  const box = { left: 0, top: 0, right: 480, bottom: 480, width: 480, height: 480 };
+  const base = {
+    fillStyle: '', strokeStyle: '', font: '', globalAlpha: 1, lineWidth: 1, textAlign: '', textBaseline: '',
+    shadowBlur: 0, shadowColor: '', globalCompositeOperation: '', lineCap: '', lineJoin: '', miterLimit: 10, filter: 'none',
+  };
+  const ctx = new Proxy(base, {
+    get(t, k) {
+      if (k in t) return t[k];
+      if (k === 'measureText') return () => ({ width: 8, actualBoundingBoxAscent: 8, actualBoundingBoxDescent: 2 });
+      if (k === 'getImageData') return () => ({ data: new Uint8ClampedArray(4 * 64), width: 8, height: 8 });
+      if (k === 'createPattern') return () => ({ __pattern: true });
+      if (k === 'createLinearGradient' || k === 'createRadialGradient') return () => ({ addColorStop() {} });
+      return () => {};
+    },
+    set(t, k, v) { t[k] = v; return true; },
+  });
+  const canvas = {
+    width: 0, height: 0, style: {}, className: '',
+    getContext: () => ctx,
+    getBoundingClientRect: () => box,
+    addEventListener: (t, fn) => { if (!listeners.has(t)) listeners.set(t, []); listeners.get(t).push(fn); },
+    removeEventListener: () => {}, setAttribute: () => {}, getAttribute: () => null, toDataURL: () => 'data:,',
+  };
+  let pending = null;
+  let changeHandler = null;
+  globalThis.requestAnimationFrame = (cb) => { pending = cb; return 1; };
+  globalThis.cancelAnimationFrame = () => { pending = null; };
+  globalThis.Image = class {
+    constructor() { this.width = 64; this.height = 64; }
+    set src(v) { this._s = v; queueMicrotask(() => { if (this.onload) this.onload(); }); }
+    get src() { return this._s; }
+  };
+  globalThis.window = {
+    devicePixelRatio: 1,
+    PointerEvent: pointer ? function PointerEvent() {} : undefined,
+    matchMedia: () => ({ matches, addEventListener: (t, fn) => { if (t === 'change') changeHandler = fn; }, removeEventListener: () => {} }),
+    addEventListener: () => {}, removeEventListener: () => {},
+  };
+  return {
+    canvas,
+    listeners,
+    dispatch(type, ev) { for (const fn of (listeners.get(type) || [])) fn(ev); },
+    pump(frames, dtMs, from = 1000) {
+      let c = from;
+      for (let i = 0; i < frames; i += 1) {
+        c += dtMs;
+        const cb = pending;
+        pending = null;
+        if (cb) cb(c);
+      }
+      return c;
+    },
+    setReducedMotion(on) { if (changeHandler) changeHandler({ matches: !!on }); },
+  };
+}
+
+async function freshView(world) {
+  const { createView } = await import(`../js/view.js?view=${(viewSeq += 1)}`);
+  const game = createGame(at(1)); // 真的第 1 关
+  const view = createView(world.canvas, {
+    onTap: (pos, note) => tapCell(game, pos, { note }),
+    onIllegal: () => false,
+    onPaint: () => {},
+    onFrame: () => {},
+  });
+  view.attach(game);
+  view.measure();
+  view.start();
+  return { game, view };
+}
+
+const press = (world, pt, type = 'pointerdown', extra = {}) => {
+  world.dispatch(type, { clientX: pt.x, clientY: pt.y, buttons: 1, button: 0, preventDefault() {}, ...extra });
+  const upType = type === 'touchstart' ? 'touchend' : (type === 'mousedown' ? 'mouseup' : 'pointerup');
+  if (upType === 'touchend') world.dispatch(upType, { changedTouches: [], preventDefault() {} });
+  else world.dispatch(upType, { clientX: pt.x, clientY: pt.y, buttons: 0, preventDefault() {} });
+};
+
+await atest('reduceMotion 命中时玩法照改、粒子为零（降级的是动效不是规则）', async () => {
+  const world = makeWorld({ matches: true });
+  const { game, view } = await freshView(world);
+  eq(view.fx().reduceMotion, true);
+  press(world, view.cellPoint(5));
+  ok(game.cells[5] !== 0, '格子必须被点中');
+  world.pump(4, 16);
+  eq(view.fx().ripples, 0, '匹配 prefers-reduced-motion 时一条粒子都不许生成');
+  view.showHint(5);
+  world.pump(4, 16);
+  eq(view.fx().ripples, 0);
+  eq(view.fx().hintPos, 5, '提示本身仍然给出');
+});
+
+await atest('不降级时同一动作生成 1 条涟漪，半径只随仿真时间长大', async () => {
+  const world = makeWorld({ matches: false });
+  const { view } = await freshView(world);
+  press(world, view.cellPoint(5));
+  world.pump(2, 16); // 32ms -> 3 步
+  const a = view.fx();
+  eq(a.ripples, 1);
+  world.pump(12, 16);
+  const b = view.fx();
+  eq(b.ripples, 1);
+  ok(b.rippleAges[0] > a.rippleAges[0], `age 必须推进：${a.rippleAges[0]} -> ${b.rippleAges[0]}`);
+  ok(b.rippleRadius[0] > a.rippleRadius[0], `半径必须由时间驱动：${a.rippleRadius[0]} -> ${b.rippleRadius[0]}`);
+});
+
+await atest('媒体查询从"能动"改成"别动"的瞬间清空已有粒子', async () => {
+  const world = makeWorld({ matches: false });
+  const { view } = await freshView(world);
+  press(world, view.cellPoint(5));
+  world.pump(2, 16);
+  eq(view.fx().ripples, 1);
+  world.setReducedMotion(true);
+  eq(view.fx().reduceMotion, true);
+  eq(view.fx().ripples, 0, 'change 事件必须真的清场');
+});
+
+await atest('没有 PointerEvent 时 touch/mouse 回落走同一套坐标换算，边距不落子也不计费', async () => {
+  const world = makeWorld({ matches: false, pointer: false });
+  const { game, view } = await freshView(world);
+  eq(world.listeners.has('pointerdown'), false, '回落分支不该同时注册 pointer 事件');
+  ok(world.listeners.has('touchstart') && world.listeners.has('mousedown'), 'touch 与 mouse 两条回落都要在');
+  press(world, { x: 2, y: 2 }, 'touchstart', { touches: [{ clientX: 2, clientY: 2 }] });
+  eq(game.taps, 0, '边距/槽位不是格子：不计点击、不改盘面');
+  eq(game.cells[0], 0);
+  press(world, view.cellPoint(4), 'touchstart', { touches: [{ clientX: view.cellPoint(4).x, clientY: view.cellPoint(4).y }] });
+  ok(game.cells[4] !== 0, 'touchstart 必须能落子');
+  press(world, view.cellPoint(9), 'mousedown');
+  ok(game.cells[9] !== 0, 'mousedown 必须能落子');
+  eq(game.taps, 2, '两次落子记两次，边距那次不记');
+});
+
+await atest('暂停时仿真不推进、盘面拒收点按，恢复后两边都回来', async () => {
+  const world = makeWorld({ matches: false });
+  const { game, view } = await freshView(world);
+  press(world, view.cellPoint(5));
+  world.pump(12, 16); // 先跑 192ms，让仿真真的动起来
+  const before = view.fx();
+  ok(before.simSteps > 0, '前置条件：仿真已经在推进');
+  ok(before.ripples === 1, `前置条件：有一条在飞的涟漪，得到 ${before.ripples}`);
+  const tapsBefore = game.taps;
+  view.setPaused(true);
+  world.pump(30, 16); // 暂停 480ms
+  const during = view.fx();
+  eq(during.simSteps, before.simSteps, '暂停期间一步都不许多');
+  eq(during.simClock, before.simClock, '用时读数必须冻住');
+  eq(during.accum, 0, '余量必须清零，否则恢复瞬间要补跑一大串');
+  press(world, view.cellPoint(6));
+  eq(game.taps, tapsBefore, '暂停期间一次点按都不许生效');
+  eq(game.cells[6], 0);
+  view.setPaused(false);
+  press(world, view.cellPoint(6));
+  world.pump(12, 16);
+  const after = view.fx();
+  ok(after.simSteps > during.simSteps, '恢复后仿真必须接着走');
+  ok(game.cells[6] !== 0, '恢复后照样能玩');
+  eq(after.ripples >= 1, true, '上一局的涟漪与这一格的涟漪都还在预算内');
+});
+
+// ---- service worker：执行 sw.js，问它到底先网络还是先缓存 --------------------------------------------
+async function loadSw({ origin = 'https://game.example', netOk = true } = {}) {
+  const handlers = {};
+  const buckets = new Map();
+  const calls = { respond: 0, fetches: [], matched: [], opened: [], deleted: [], claimed: 0, skipped: 0, waiters: [] };
+  const bucket = (name) => { if (!buckets.has(name)) buckets.set(name, new Map()); return buckets.get(name); };
+  const res = (tag) => ({ ok: true, status: 200, tag, clone() { return { ...this, cloned: true }; } });
+  globalThis.self = {
+    location: { origin, href: `${origin}/` },
+    clients: { claim: async () => { calls.claimed += 1; } },
+    skipWaiting: () => { calls.skipped += 1; },
+    addEventListener: (t, fn) => { handlers[t] = fn; },
+  };
+  const resolveKey = (u) => {
+    const s = typeof u === 'string' ? u : String((u && u.url) || u);
+    if (s === './' || s === '.' || s === '/') return `${globalThis.self.location.origin}/`;
+    return s;
+  };
+  globalThis.caches = {
+    keys: async () => [...buckets.keys()],
+    open: async (name) => {
+      calls.opened.push(name);
+      const b = bucket(name);
+      return { put: async (req, body) => b.set(resolveKey(req), body), match: async (req) => b.get(resolveKey(req)) || undefined };
+    },
+    delete: async (name) => { calls.deleted.push(name); return buckets.delete(name); },
+    match: async (req) => {
+      calls.matched.push(resolveKey(req));
+      const key = resolveKey(req);
+      for (const b of buckets.values()) { const hit = b.get(key); if (hit) return hit; }
+      return undefined;
+    },
+  };
+  globalThis.Response = { error: () => ({ __responseError: true }) };
+  const order = [];
+  globalThis.fetch = async (req) => {
+    order.push('fetch');
+    calls.fetches.push(req.url);
+    if (!netOk) throw new Error('offline');
+    return res('net');
+  };
+  await import(`../sw.js?sw=${(viewSeq += 1)}`);
+  return {
+    calls,
+    order,
+    handlers,
+    bucket,
+    request: (url, opts = {}) => ({ url, method: opts.method || 'GET', mode: opts.mode || 'cors', headers: new Map() }),
+    respond: async (req) => {
+      let out = null;
+      const ev = { request: req, respondWith: (p) => { calls.respond += 1; out = p; } };
+      handlers.fetch(ev);
+      const settled = await Promise.resolve(out).catch((e) => ({ rejected: String(e && e.message || e) }));
+      return settled;
+    },
+  };
+}
+
+await atest('同源子资源是网络优先：fetch 先被调用，命中后才写缓存', async () => {
+  const sw = await loadSw();
+  const req = sw.request('https://game.example/js/main.js');
+  const out = await sw.respond(req);
+  eq(sw.calls.fetches, ['https://game.example/js/main.js']);
+  eq(sw.order.includes('fetch'), true);
+  eq(sw.calls.matched.length, 0, '在线路径一次都不该去查缓存');
+  eq(out.tag, 'net');
+  await new Promise((r) => setTimeout(r, 0)); // put 是 fire-and-forget，让微任务落地
+  eq(sw.calls.opened, ['kakurasu-v1'], '缓存名必须带版本号');
+  eq(sw.bucket('kakurasu-v1').has(req.url), true, '抓到的是否真的进了版本桶');
+});
+
+await atest('断网时退回缓存里的同一份，不白屏也不报错', async () => {
+  const sw = await loadSw({ netOk: false });
+  const url = 'https://game.example/css/game.css';
+  sw.bucket('kakurasu-v1').set(url, { tag: 'cached' });
+  const out = await sw.respond(sw.request(url));
+  eq(out.tag, 'cached', '离线必须命中上次的快照');
+  eq(sw.calls.matched, [url]);
+});
+
+await atest('离线的导航请求退回缓存里的 index.html，非导航就如实失败', async () => {
+  const sw = await loadSw({ netOk: false });
+  sw.bucket('kakurasu-v1').set('https://game.example/', { tag: 'shell' });
+  const nav = await sw.respond(sw.request('https://game.example/#/c/3', { mode: 'navigate' }));
+  eq(nav.tag, 'shell', '导航请求断网时也要有页面可渲染');
+  const notNav = await sw.respond(sw.request('https://game.example/js/nope.js'));
+  eq(notNav.__responseError, true, '没有缓存的子资源要如实失败，不能伪造命中');
+});
+
+await atest('第三方资源与非 GET 一律不接管', async () => {
+  const sw = await loadSw();
+  const cross = await sw.respond(sw.request('https://evil.example/js/main.js'));
+  eq(sw.calls.respond, 0, '跨源请求不许被 respondWith');
+  eq(sw.calls.fetches.length, 0, '跨源请求也不该被 sw 代抓');
+  eq(cross, null);
+  const post = await sw.respond(sw.request('https://game.example/api', { method: 'POST' }));
+  eq(post, null, '非 GET 同样不接管');
+});
+
+await atest('activate 把所有非当前版本的缓存删干净并接管客户端', async () => {
+  const sw = await loadSw();
+  sw.bucket('kakurasu-v1');
+  sw.bucket('kakurasu-v0');
+  sw.bucket('kakurasu-old');
+  let waited = null;
+  sw.handlers.activate({ waitUntil: (p) => { waited = p; } });
+  await waited;
+  eq(sw.calls.deleted.sort(), ['kakurasu-old', 'kakurasu-v0'], '只留当前版本桶');
+  eq(sw.calls.claimed, 1);
+  sw.handlers.install();
+  eq(sw.calls.skipped, 1, '安装要 skipWaiting，否则新版本等旧标签页全关');
 });
 
 run();
