@@ -5,8 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14161a">
 <meta name="description" content="数和格 Kakurasu：每行每列带权和等于线索。屏上印的解数由两条互相独立的计数器算出来，4×4 全空间 65536 个棋盘已逐位对过账。">
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%2314161a'/%3E%3Crect%20x='5'%20y='5'%20width='10'%20height='10'%20fill='%23d8a13c'/%3E%3Crect%20x='17'%20y='17'%20width='10'%20height='10'%20fill='%2378dcff'/%3E%3C/svg%3E">
 <title>数和 · KAKURASU</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="数和">
+<meta property="og:type" content="website">
+<meta property="og:title" content="数和 · KAKURASU">
+<meta property="og:description" content="带权和棋盘：解数与推理深度都是量出来的，不是贴的尺寸标签。">
+<meta property="og:image" content="icons/og-card.png">
+<meta property="og:locale" content="zh_CN">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="icons/og-card.png">
 <link rel="stylesheet" href="css/game.css">
 </head>
 <body>
@@ -17,6 +31,12 @@
     <button type="button" data-mode="daily">每日</button>
     <button type="button" data-mode="random">随机</button>
   </nav>
+  <div class="hud" id="hud" aria-label="系统">
+    <button type="button" id="pause" aria-pressed="false" title="暂停 / 继续（P）">暂停</button>
+    <button type="button" id="sound" aria-pressed="true" title="静音开关（M）">音效</button>
+    <button type="button" id="fullscreen" title="全屏（F）">全屏</button>
+    <button type="button" id="help" title="玩法说明（H 或 ?）">玩法</button>
+  </div>
   <p class="totals" id="totals"></p>
 </header>
 
@@ -32,6 +52,15 @@
         <div class="curtain-actions">
           <button type="button" id="again">再来一次</button>
           <button type="button" id="next" class="primary">下一关</button>
+        </div>
+      </div>
+    </div>
+    <div class="curtain" id="pausecard" hidden>
+      <div class="curtain-card">
+        <h2>已暂停</h2>
+        <p class="tally" id="pausetally"></p>
+        <div class="curtain-actions">
+          <button type="button" id="resume" class="primary">继续（P）</button>
         </div>
       </div>
     </div>
@@ -61,6 +90,23 @@
     </details>
   </aside>
 </main>
+
+<div class="modal" id="helpcard" hidden role="dialog" aria-modal="true" aria-labelledby="helptitle">
+  <div class="modal-card">
+    <h2 id="helptitle">玩法说明 · 数和 KAKURASU</h2>
+    <ol class="howto">
+      <li><b>目标</b>：让每一行、每一列的<em>带权和</em>正好等于印在边上的线索。解不开时可以按<em>重开</em>回到空盘。</li>
+      <li><b>权重</b>：一个格子被选中时，它把<b>自己的列号</b>付进行线索、把<b>自己的行号</b>付进列线索。所以左上角那格只值 1+1，右下角那格值 4+4。</li>
+      <li><b>点法</b>：点格子在"选中 / 空"之间切换；按住拖动可以一次划过一排。<em>标记</em>模式（或 N）点出来的是叉，表示"这格我确定不选"，它不计入带权和。</li>
+      <li><b>读数</b>：线索下面那行小灰字是<em>当前</em>带权和；变青蓝＝已等于线索，变红＝越过了线索（必须撤销）。</li>
+      <li><b>评分</b>：<em>最少</em>是这关的点击下限（唯一解里要选的格子数，可证），一枪不打偏就是三星。用过提示就不算完美。</li>
+    </ol>
+    <p class="keys">键盘：Enter/Space 开始或继续 · P 暂停 · R 重开 · U 撤销 · N 标记 · G 提示 · M 静音 · F 全屏 · H 或 ? 玩法 · Esc 关闭弹层</p>
+    <div class="modal-actions">
+      <button type="button" id="helpclose" class="primary">开始（Enter）</button>
+    </div>
+  </div>
+</div>
 
 <p class="toast" id="toast" hidden></p>
 <script type="module" src="js/main.js"></script>
