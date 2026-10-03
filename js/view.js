@@ -39,6 +39,12 @@ export function createView(canvas, { onTap, onIllegal, onPaint } = {}) {
   let geom = { cell: 30, x0: 40, y0: 40, w: 320, h: 320, clue: 14 };
   let hint = null; // { pos, until }
   let raf = 0;
+  // ---- 减弱动效（prefers-reduced-motion）----
+  // 提示格的呼吸环按 t = (now % 1100) / 1100 变粗变大变淡，是纯装饰。
+  // 减弱动效下把 t 钉在 0.5：环照画、格照指，只停相位。
+  let reduceMotion = false;
+  const ringPhase = () => (reduceMotion ? 0.5 : (performance.now() % 1100) / 1100);
+
   let last = 0;
   let warm = 0; // the first frames always repaint, so the canvas is never blank
   let paint = null; // { value, seen:Set } while a drag is in progress
@@ -230,7 +236,7 @@ export function createView(canvas, { onTap, onIllegal, onPaint } = {}) {
           ctx.stroke();
         }
         if (hint && hint.pos === pos) {
-          const t = (performance.now() % 1100) / 1100;
+          const t = ringPhase();
           ctx.strokeStyle = `rgba(120, 220, 255, ${(0.9 - t * 0.6).toFixed(3)})`;
           ctx.lineWidth = 2 + t * 3;
           const grow = t * cell * 0.18;
@@ -368,6 +374,16 @@ export function createView(canvas, { onTap, onIllegal, onPaint } = {}) {
       for (let i = 3; i < d.length; i += 4 * 97) if (d[i] > 0) n++;
       return n;
     },
+    // The gate the runtime pref flip lands on: idempotent, and repaints so a player who
+    // toggles the OS switch sees the ring settle on the same frame, not at the next hint.
+    setReduceMotion(v) {
+      const on = !!v;
+      if (on === reduceMotion) return reduceMotion;
+      reduceMotion = on;
+      if (reduceMotion) draw();
+      return reduceMotion;
+    },
+    isReducedMotion: () => reduceMotion,
     measure,
     redraw: draw,
     showHint(pos) {
