@@ -77,8 +77,6 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 | `verify` | `bash tools/verify.sh` | **否** | 本轮这台机器上已有一个别的仓的 headless Chrome 带着 `--remote-debugging-port=9373` 在听（`/tmp/sky-chrome-profile`），浏览器台架的纪律是同一时刻只留一个，所以没有派生它。要验的人自己跑，命令在「门禁清单」一节末尾。本文浏览器层的数字全部是源码点数，不是实测 |
 | `deploy-set` | `node tools/deploy-set.mjs` | 绿：对拷出来的产物提要求（见「上线的到底是哪一批文件」一节） |
 | `deploy-set:selftest` | `node tools/deploy-set-selftest.mjs` | 绿：9 刀逐类打红且点名 + 1 条阴性对照 |
-| `deploy-set` | `node tools/deploy-set.mjs` | 绿：对拷出来的产物提要求（见「上线的到底是哪一批文件」一节） |
-| `deploy-set:selftest` | `node tools/deploy-set-selftest.mjs` | 绿：9 刀逐类打红且点名 + 1 条阴性对照 |
 
 门禁之外还有两条可跑入口，本轮都验过：
 
