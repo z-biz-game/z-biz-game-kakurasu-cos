@@ -409,6 +409,19 @@ async function pointerScenario(cdp, sessionId, runJS) {
   await key('p');
   await sleep(150);
   rec('and the second p resumes', (await runJS('window.kakurasu.state.paused')) === false, await runJS('window.kakurasu.state.phase'));
+  // 暂停中换关是玩家走得到的路径：暂停卡只盖住棋盘，货架与模式按钮在右侧面板里照常可点。
+  // 换关必须带走上一局的暂停态 —— 否则新关一开局就是冻住的，而那张卡还写着旧局的用时与点击数。
+  await key('p');
+  await sleep(150);
+  const navFrom = await runJS(`(() => { const g = window.kakurasu; return { index: g.state.index, id: g.state.id, p: g.state.paused, phase: g.state.phase }; })()`);
+  const target = navFrom.index === 2 ? 3 : 2;
+  await runJS(`window.kakurasu.load('#/c/${target}'); 'ok'`);
+  await sleep(260);
+  const afterNav = await runJS(`(() => { const g = window.kakurasu; return { p: g.state.paused, phase: g.state.phase, id: g.state.id, card: document.getElementById('pausecard').hidden, label: document.getElementById('pause').textContent }; })()`);
+  rec('a lot change while paused unpauses the new board',
+    navFrom.p === true && afterNav.p === false && afterNav.card === true
+      && afterNav.phase === 'PLAYING' && afterNav.id !== navFrom.id && afterNav.label === '暂停',
+    { from: navFrom, to: afterNav, loaded: `#/c/${target}` });
 
   return { rows };
 }

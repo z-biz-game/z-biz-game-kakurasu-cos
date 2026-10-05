@@ -138,6 +138,9 @@ function setGame(lot, label) {
   app.game = createGame(lot);
   app.hints = 0;
   view.attach(app.game);
+  // 换关 = 新的一局，上一局的暂停态不许带过来：货架与模式按钮在面板里、暂停卡只盖住棋盘，
+  // 所以暂停中照样点得动 —— 不清就会得到一开局就冻住的关，和一张写着别人用时与点击数的卡。
+  setPaused(false);
   el.curtain.hidden = true;
   say('');
 }
