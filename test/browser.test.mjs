@@ -3,7 +3,7 @@
 //
 // 这里最要紧的一条：静音判据不看 ctx 的 gain，看 `log.osc` —— 假静音（gain=0）照样逐条新建
 // 振荡器，真静音必须一条都不新建，并且 AudioContext 的 state 要真的变 suspended。
-import { test, run, eq, ok } from '../tools/harness.mjs';
+import { test, run, eq, ok, atest } from '../tools/harness.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SETTINGS_KEY, defaults, readSettings, writeSettings } from '../js/settings.js';
@@ -43,17 +43,6 @@ function fakeWorld({ startSuspended = false, resistSuspend = false } = {}) {
     resume() { log.resumes += 1; this.state = 'running'; return Promise.resolve(); }
   }
   return { log, win: { AudioContext: FakeAudioContext } };
-}
-
-// harness 的 test() 同步调用 body，永远不会 await 一个 async body —— 那样抛出的断言错误会
-// 变成没人管的 promise，行还是绿的。所以 async 行必须先 await 再登记。
-async function atest(name, fn) {
-  try {
-    await fn();
-    test(name, () => {});
-  } catch (err) {
-    test(name, () => { throw err; });
-  }
 }
 
 async function freshAudio(opts) {

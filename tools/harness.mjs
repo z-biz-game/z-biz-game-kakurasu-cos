@@ -26,6 +26,17 @@ export function fail(msg) {
   throw new Error(msg);
 }
 
+// test() 同步调用 body，所以 async 行不能直接交给它：抛出的断言会变成一条没人 await 的
+// promise，行还是绿的。atest 先 await 出结果，再把结果按同样形状登记进 rows。
+export async function atest(name, fn) {
+  try {
+    await fn();
+    test(name, () => {});
+  } catch (err) {
+    test(name, () => { throw err; });
+  }
+}
+
 export function run() {
   const bad = rows.filter((r) => !r.pass);
   for (const r of rows) console.log(`${r.pass ? '  ok  ' : '  FAIL'} ${r.test}${r.pass ? '' : '\n         ' + r.detail}`);
