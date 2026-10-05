@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { inflateSync } from 'node:zlib';
 
 const root = new URL('..', import.meta.url).pathname;
 const read = (rel) => readFileSync(join(root, rel));
@@ -28,6 +29,86 @@ function pngHead(buf) {
     color: buf[25],
     bytes: buf.length,
   };
+}
+
+// ---- 纯 node 解像素（本仓资产全是 8 位 RGBA、非隔行）：安全区这种判据得盯真图，
+// 而 Pillow 在 CI 上不一定有 —— 工厂侧量一次，仓侧再量一次，两边都不许靠"我记得坐标"过关。
+function decodePng(buf) {
+  let off = 8;
+  let w = 0;
+  let h = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  const parts = [];
+  while (off + 8 <= buf.length) {
+    const len = buf.readUInt32BE(off);
+    const type = buf.toString('ascii', off + 4, off + 8);
+    const data = buf.subarray(off + 8, off + 8 + len);
+    if (type === 'IHDR') {
+      w = data.readUInt32BE(0);
+      h = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+    } else if (type === 'IDAT') parts.push(Buffer.from(data));
+    else if (type === 'IEND') break;
+    off += 12 + len;
+  }
+  if (bitDepth !== 8 || colorType !== 6) throw new Error(`只支持 8 位 RGBA，实测 depth=${bitDepth} color=${colorType}`);
+  const raw = inflateSync(Buffer.concat(parts));
+  const bpp = 4;
+  const stride = w * bpp;
+  const px = Buffer.alloc(h * stride);
+  const paeth = (a, b, c) => {
+    const p = a + b - c;
+    const pa = Math.abs(p - a);
+    const pb = Math.abs(p - b);
+    const pc = Math.abs(p - c);
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+  };
+  for (let y = 0; y < h; y++) {
+    const ft = raw[y * (stride + 1)];
+    const o = y * stride;
+    const i0 = y * (stride + 1) + 1;
+    for (let i = 0; i < stride; i++) {
+      const v = raw[i0 + i];
+      const a = i >= bpp ? px[o + i - bpp] : 0;
+      const b = y > 0 ? px[o - stride + i] : 0;
+      const c = i >= bpp && y > 0 ? px[o - stride + i - bpp] : 0;
+      px[o + i] = (ft === 0 ? v
+        : ft === 1 ? v + a
+        : ft === 2 ? v + b
+        : ft === 3 ? v + ((a + b) >> 1)
+        : v + paeth(a, b, c)) & 255;
+    }
+  }
+  return { w, h, px };
+}
+
+// 母题 = 铜块 (#d8a13c) 与青蓝刻度 (#78dcff) 那两种颜色；暗底与面板不算内容。
+const MOTIF = [[216, 161, 60], [120, 220, 255]];
+function motifBbox({ w, h, px }) {
+  let minx = w;
+  let miny = h;
+  let maxx = -1;
+  let maxy = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const r = px[i];
+      const g = px[i + 1];
+      const b = px[i + 2];
+      let near = false;
+      for (const [tr, tg, tb] of MOTIF) {
+        if (Math.abs(r - tr) + Math.abs(g - tg) + Math.abs(b - tb) < 70) { near = true; break; }
+      }
+      if (!near) continue;
+      if (x < minx) minx = x;
+      if (x > maxx) maxx = x;
+      if (y < miny) miny = y;
+      if (y > maxy) maxy = y;
+    }
+  }
+  return { minx, miny, maxx, maxy };
 }
 
 const ASSETS = [
@@ -145,12 +226,38 @@ test('桌面壳也真用上母题：electron/main.cjs 的窗口 icon 指到盘�
   ok(/icon:\s*ICON/.test(mainSrc), 'ICON 常量没被传进 BrowserWindow —— 建好了没人用的死引用');
 });
 
+test('maskable 的母题落在中央 80% 安全区内（纯 node 解像素量真图）', () => {
+  const img = decodePng(read('icons/icon-maskable-512.png'));
+  eq([img.w, img.h], [512, 512], 'maskable 尺寸不是 512');
+  const b = motifBbox(img);
+  ok(b.maxx >= b.minx && b.maxy >= b.miny, '一个母题像素都没找到：配色或画法改了，这条判据无从判定');
+  const lo = Math.round(img.w * 0.10);
+  const hi = Math.round(img.w * 0.90) - 1;
+  const inside = b.minx >= lo && b.maxx <= hi && b.miny >= lo && b.maxy <= hi;
+  console.log(`  [安全区] bbox=(${b.minx},${b.miny})-(${b.maxx},${b.maxy}) 允许 ${lo}..${hi}`
+    + ` 留白 L${b.minx} T${b.miny} R${img.w - 1 - b.maxx} B${img.h - 1 - b.maxy} ⇒ ${inside ? '在圈内' : '越界'}`);
+  ok(inside, `母题越出 80% 安全区：圆形遮罩的启动器会切掉边缘那排线索刻度`);
+  // 阴性对照：同一把尺量一枚"母题贴到四角"的图，必须判越界 —— 不然上面那条绿是空跑出来的
+  const fake = { w: 512, h: 512, px: Buffer.alloc(512 * 512 * 4) };
+  for (const [x, y] of [[2, 2], [509, 509]]) {
+    const i = (y * 512 + x) * 4;
+    fake.px[i] = 216;
+    fake.px[i + 1] = 161;
+    fake.px[i + 2] = 60;
+    fake.px[i + 3] = 255;
+  }
+  const fb = motifBbox(fake);
+  ok(!(fb.minx >= lo && fb.maxx <= hi && fb.miny >= lo && fb.maxy <= hi),
+    `阴性对照没判红（量到 bbox=(${fb.minx},${fb.miny})-(${fb.maxx},${fb.maxy})）：这把尺是空跑的`);
+});
+
 await atest('生成器可复现：同一 seed 重跑一次，13 张资产的 SHA-256 与盘上逐张相同', async () => {
   const gen = join(root, 'assets', 'gen', 'gen_art.py');
   ok(existsSync(gen), 'assets/gen/gen_art.py 不在仓里：资产就成了不可复现的手改物');
   const genSrc = readFileSync(gen, 'utf8');
   ok(/--seed/.test(genSrc) && /20261002/.test(genSrc), 'gen_art.py 没有 --seed/默认 seed，重跑无从对齐');
   ok(/IHDR|struct\.unpack\(">II"/.test(genSrc), 'gen_art.py 不自己解 IHDR：写完不自证宽高');
+  ok(/def check_safe_zone/.test(genSrc), 'gen_art.py 里的 maskable 安全区自证没了：换形状遮罩切掉母题将无人报警');
   let pillowed = true;
   try {
     execFileSync('python3', ['-c', 'import PIL'], { stdio: 'ignore' });

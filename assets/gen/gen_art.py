@@ -10,7 +10,9 @@
 产出的三类东西：
   icons/       favicon 16/32、apple-touch-icon 180、PWA 192/512、maskable 512、母图 1024、og 1200x630
   assets/img/  游戏内真正贴到画布上的纹理与发光 sprite（board-texture 可无缝平铺）
-  两者都是真 PNG（本脚本写完会自证：解 IHDR 读宽高、拒绝 0 字节）
+  两者都是真 PNG（本脚本写完会自证：解 IHDR 读宽高、拒绝 0 字节）。maskable 那一枚还多一道
+  自证：量真实像素，母题（铜块 + 青蓝刻度）必须落在中央 80% 安全区内，越界就非零退出 ——
+  启动器按形状裁 maskable（圆形最常见），坐标记错一次就把线索刻度切掉，而宽高照样对得上。
 
 确定性：所有随机都走同一个 LCG（种子 --seed，默认 20261002），同一命令跑两次逐字节相同。
 
@@ -297,6 +299,50 @@ def glow_sprite(S=64, color=CYAN) -> Image.Image:
     return img
 
 
+SAFE_INSET = 0.10  # maskable 的 80% 安全区：四周各让出 10%，形状遮罩（最常见是圆）切不到母题
+
+
+def motif_bbox(img):
+    """母题（铜块与青蓝刻度那两种颜色）的包围盒。背景不算内容：maskable 的背景本来就要铺满四角。"""
+    rgb = img.convert("RGB")
+    w, h = rgb.size
+    px = rgb.load()
+    minx, miny, maxx, maxy = w, h, -1, -1
+    for y in range(h):
+        for x in range(w):
+            r, g, b = px[x, y]
+            d_brass = abs(r - BRASS[0]) + abs(g - BRASS[1]) + abs(b - BRASS[2])
+            d_cyan = abs(r - CYAN[0]) + abs(g - CYAN[1]) + abs(b - CYAN[2])
+            if min(d_brass, d_cyan) < 70:
+                if x < minx:
+                    minx = x
+                if x > maxx:
+                    maxx = x
+                if y < miny:
+                    miny = y
+                if y > maxy:
+                    maxy = y
+    return minx, miny, maxx, maxy
+
+
+def check_safe_zone(img, rel):
+    """量一次真实像素，返回（读数, 是否越界）。不靠画的时候记住坐标 —— 记住的坐标会漂。"""
+    w, h = img.size
+    minx, miny, maxx, maxy = motif_bbox(img)
+    lo_x, hi_x = round(w * SAFE_INSET), round(w * (1 - SAFE_INSET)) - 1
+    lo_y, hi_y = round(h * SAFE_INSET), round(h * (1 - SAFE_INSET)) - 1
+    if maxx < minx:
+        return f"{rel}: 一个母题像素都没找到（配色改了？），无从判定安全区", True
+    bleed = minx < lo_x or maxx > hi_x or miny < lo_y or maxy > hi_y
+    return (
+        f"{rel} {w}x{h}：母题 bbox=({minx},{miny})-({maxx},{maxy})，"
+        f"允许 x/y ∈ [{lo_x}..{hi_x}]/[{lo_y}..{hi_y}]，"
+        f"四边留白 L{minx} T{miny} R{w - 1 - maxx} B{h - 1 - maxy} "
+        f"⇒ {'越界，圆形遮罩会切掉' if bleed else '在圈内'}",
+        bleed,
+    )
+
+
 def verify(root: str, names):
     """自证：解 IHDR 读宽高、拒绝 0 字节。任何一张不合格就非零退出。"""
     bad = []
@@ -351,8 +397,10 @@ def main():
         save_png(board_icon(S, Lcg(args.seed + S)), os.path.join(root, rel))
         names.append(rel)
 
-    save_png(board_icon(512, Lcg(args.seed + 5), full_bleed=True), os.path.join(root, "icons/icon-maskable-512.png"))
+    maskable = board_icon(512, Lcg(args.seed + 5), full_bleed=True)
+    save_png(maskable, os.path.join(root, "icons/icon-maskable-512.png"))
     names.append("icons/icon-maskable-512.png")
+    safe_msg, safe_bleed = check_safe_zone(maskable, "icons/icon-maskable-512.png")
 
     save_png(og_card(), os.path.join(root, "icons/og-card.png"))
     names.append("icons/og-card.png")
@@ -366,7 +414,12 @@ def main():
     names.append("assets/img/glow-brass-64.png")
 
     print(f"seed={args.seed}")
-    return verify(root, names)
+    print(f"[安全区] {safe_msg}")
+    rc = verify(root, names)
+    if safe_bleed:
+        print("FAIL maskable 的母题越出 80% 安全区：换成圆形/圆角遮罩的启动器会切掉它", file=sys.stderr)
+        return 1
+    return rc
 
 
 if __name__ == "__main__":
