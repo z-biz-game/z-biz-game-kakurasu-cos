@@ -5,8 +5,9 @@
 一个确定性求解器量出来的难度数字，以及守住这两件事的 node 门禁。
 屏上那个"解数 1"不是标的，是 DP 与逐格回溯各数一遍、且被 4×4 全空间 `2^16` 穷举在测试层对过账之后才印出来的。
 
-零依赖、零打包器、零图片素材：`package.json` 的 `dependencies` 与 `devDependencies` 都是 `{}`，画面全部由 canvas 2D 程序绘制。
-本机环境：Apple M5 Pro（15 核）、node v26.8.1、日期 2026-09-29。**墙钟只当读数**：这台机器上同时有别的代理的闸在跑，秒数复跑不出同一个值，所以本文凡是要说成本的地方都引那条阈值断言，读数只列在标注了「量级」的那一列。
+零依赖、零打包器：`package.json` 的 `dependencies` 与 `devDependencies` 都是 `{}`。图片素材是 13 张真 PNG，全部由
+`assets/gen/gen_art.py` 现烤（`test/assets.test.mjs` 逐张读 IHDR、并把 13 张重跑一遍比 SHA-256），画面其余部分由 canvas 2D 程序绘制。
+本机环境：Apple M1 Pro（8 核）、node v22.22.3、Pillow 11.3.0、日期 2026-10-05。**墙钟只当读数**：这台机器上同时有别的代理的闸在跑，秒数复跑不出同一个值，所以本文凡是要说成本的地方都引那条阈值断言，读数只列在标注了「量级」的那一列。
 
 ---
 
@@ -299,9 +300,11 @@ master  rank 4-409  marks 19-30  depthMax 4  backtracksMax 6  nodesMax 11  coreS
 但没有一个 workflow 真的拿它去打个 Pages URL；`localhost:<port>` 写法同样没被覆盖；
 `file://` 双击从来不是支持的玩法（ES module 需要 origin）。
 
-静态服务器的实际行为（本轮用 `curl` 打本机 `:5192` 实测，起完就杀）：
-`/` 与 `/index.html` → 200 `text/html; charset=utf-8` 3590 字节；`/css/game.css` → 200 `text/css` 7069；
-`/js/main.js` → 200 `text/javascript` 19847；`/js/core/count.js` → 200 12658；`/js/data/lots.js` → 200 16304；
+静态服务器的实际行为（本轮用 `curl` 打本机 `:5199` 实测，`node server.cjs 5199` 起完就杀，`lsof` 确认端口已释放）：
+`/` 与 `/index.html` → 200 `text/html; charset=utf-8` 6433 字节；`/css/game.css` → 200 `text/css` 11074；
+`/js/main.js` → 200 `text/javascript` 27924；`/js/core/count.js` → 200 12658；`/js/data/lots.js` → 200 16304；
+图片也真取得到：`/assets/img/glow-brass-64.png` → 200 `image/png` 1423、`/icons/og-card.png` → 200 `image/png` 80661
+（两个字节数与 `ls -l` 在盘上的大小逐条相等，所以 manifest 里那些 `src` 不是指向空气）；
 全部带 `Cache-Control: no-cache`；`/nope.js` → 404；`/%zz`（坏编码）→ 400 `bad request`。
 `server.cjs:29-31` 先把路径 `normalize`、剥掉前导的 `../`，再用 `startsWith(root)` 兜一层 403；
 本轮实测 `/%2e%2e/%2e%2e/etc/passwd` 命中的是 **404**（前导 `..` 在第一步就被剥掉，压根没走到 403 那条分支），
@@ -329,13 +332,14 @@ master  rank 4-409  marks 19-30  depthMax 4  backtracksMax 6  nodesMax 11  coreS
   想验的人自己跑：`bash tools/verify.sh`（本机口 5192/9352，占用会退 6）。
 * **不承诺 `npm run electron` 能跑。** `electron/main.cjs` 与 `package.json` 的 `build` 段是壳，
   但仓里零依赖、没有 `node_modules`，Electron 二进制不在任何地方；`npm run bake` 同样未跑（它会改写 `js/data/lots.js`）。
-* **不承诺计时可移植。** 本文那列「本机量级」是这台 M5 Pro、node v26.8.1 在一次负载下的读数；
+* **不承诺计时可移植。** 本文那列「本机量级」是这台 M1 Pro、node v22.22.3 在一次负载下的读数；
   CI 是 ubuntu + node 22，`DESIGN.md` 里 `wall=206.2s`、`bake 3.5 分钟` 是 2026-09-27 那台机器的数，本轮未复现。
-  结构量（65536/64959/64382/577/400/40/155）逐位可复现，计时量随机器漂移。
+  结构量（65536/64959/64382/577/400/40/200）逐位可复现，计时量随机器漂移。
 * **不承诺 dev 服务器的访问控制。** 它只挡"逃出仓库根"，仓库根内的任何文件都直接发：
-  本轮实测 `/.git/config` → 200（373 字节）、`/.git/HEAD` → 200、`/package.json` → 200、`/server.cjs` → 200、
+  本轮实测 `/.git/config` → 200（325 字节）、`/.git/HEAD` → 200、`/package.json` → 200、`/server.cjs` → 200、
   `/tools/bake.mjs` → 200。线上靠 `pages.yml` 只拷 `index.html` + `css/` + `js/` 来兜，不靠服务器。
 * **不承诺外部规则出处、也不承诺文档完备。** 仓内没有一条外部 URL；`DESIGN.md:4` 引用的 `deliverable.md` 在仓里不存在。
 * **刻意不做的产品面**（`DESIGN.md` §8）：成就、排行榜、签到、内购、云存档、分享战绩；
-  多解计数榜单（本仓只发布唯一解）；点击时全枚举；打包器与任何图片/音频/字体资产；npm 依赖。
+  多解计数榜单（本仓只发布唯一解）；点击时全枚举；打包器；音频与字体资产；npm 依赖。
+  图片不在此列——13 张 PNG 由 `assets/gen/gen_art.py` 现烤并被 `test/assets.test.mjs` 逐张量过，位图取不到时画面退回程序绘制。
 * 唯一分享的东西是谜题本身：`#/lot/<id>`。

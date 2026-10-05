@@ -357,7 +357,7 @@ def main():
     save_png(og_card(), os.path.join(root, "icons/og-card.png"))
     names.append("icons/og-card.png")
 
-    # 游戏内资产：画布真的会用到这两张
+    # 游戏内资产：画布真的会用到这三张（纹理 + 两张涟漪 sprite）
     save_png(board_texture(256, args.seed), os.path.join(root, "assets/img/board-texture.png"))
     names.append("assets/img/board-texture.png")
     save_png(glow_sprite(64, CYAN), os.path.join(root, "assets/img/glow-cyan-64.png"))
