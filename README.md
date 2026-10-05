@@ -6,7 +6,8 @@
 屏上那个"解数 1"不是标的，是 DP 与逐格回溯各数一遍、且被 4×4 全空间 `2^16` 穷举在测试层对过账之后才印出来的。
 
 零依赖、零打包器：`package.json` 的 `dependencies` 与 `devDependencies` 都是 `{}`。图片素材是 13 张真 PNG，全部由
-`assets/gen/gen_art.py` 现烤（`test/assets.test.mjs` 逐张读 IHDR、并把 13 张重跑一遍比 SHA-256），画面其余部分由 canvas 2D 程序绘制。
+`assets/gen/gen_art.py` 现烤（`test/assets.test.mjs` 逐张读 IHDR、把 13 张重跑一遍比 SHA-256，再用纯 node 解码像素量出
+maskable 图形的母题确实落在中央 80% 安全圈内），画面其余部分由 canvas 2D 程序绘制。
 本机环境：Apple M1 Pro（8 核）、node v22.22.3、Pillow 11.3.0、日期 2026-10-05。**墙钟只当读数**：这台机器上同时有别的代理的闸在跑，秒数复跑不出同一个值，所以本文凡是要说成本的地方都引那条阈值断言，读数只列在标注了「量级」的那一列。
 
 ---
@@ -20,18 +21,20 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 
 这两行不是装饰：`js/core/grid.js:84-94` 的 `rowSum`/`colSum` 就是它逐字的实现（`s += x + 1` 与 `s += y + 1`），
 `cluesOf`（`js/core/grid.js:96`）把它摊成一条棋盘对应的线索对，`maxClue(n) = n(n+1)/2`（`js/core/grid.js:36`）给出单条线索的上限，
-超上限在 `validateLot` 里报 `clue-range`。视图只读 `statusOf` 的 `{sum, clue, ok, over, left}`（`js/core/grid.js:183-195`）来上色：
-金色未满、青绿正好等于线索、超出即红（`js/view.js:178,189` 写死 `#d8a13c / #78dcff / #e2685f`）——
+超上限在 `validateLot` 里报 `clue-range`。视图只读 `statusOf` 的 `{sum, clue, ok, over, left}`（`js/core/grid.js:183-196`）来上色：
+金色未满、青绿正好等于线索、超出即红（`js/view.js:276,287` 写死 `#d8a13c / #78dcff / #e2685f`）——
 权重都是正数，一行**超过**线索就回不来了，所以红色是死路而不是警告。
 
 名字的日英对照只在难度带标签上（`js/core/make.js:34-39`）：浅滩 SHOAL · 连环 LINKED · 交缠 TWINED · 迷阵 MASTER；
 界面与标题是中文"数和 / 数和格"加英文 KAKURASU（`index.html` 的 `<title>`、`package.json` 的 `description`）。
 
 **出处的诚实口径**：这份仓里没有任何外部规则来源。本轮对代码与配置（`*.js *.mjs *.cjs *.html *.css *.yml`）grep 过
-`https?://`，8 处命中逐条数过是：`tools/playtest.mjs` 的 4 处（web 与 CDP 的本机回环口）、`server.cjs` 的 2 处
-（URL 解析的哨兵 base 与启动打印）、`electron/main.cjs:22` 加载本机端口的 1 处，加 `index.html:8` 那个内联 SVG favicon 的
-`xmlns='http://www.w3.org/2000/svg'`。**没有一条指向外部规则页**。更硬的一条：把 `Nikoli`、`Tatham` 这两个数和格常被挂上去的
-外部权威名在整个仓里 grep（含 `*.md *.json`），**零命中** —— 所以"官方规则如此""日英双源"这类说法在本仓连一个字都没有，写不出来。
+`https?://`，**16 处命中**逐条数过是：`tools/playtest.mjs` 的 4 处（web 与 CDP 的本机回环口）、`test/browser.test.mjs` 的 9 处
+（ServiceWorker 假世界的 fixture 域名 `game.example` / `evil.example`，是 IANA 保留域，不发真请求）、`server.cjs` 的 2 处
+（URL 解析的哨兵 base 与启动打印）、`electron/main.cjs:28` 加载本机端口的 1 处；`index.html`、`css/`、`.github/workflows/`
+里 **0 处**。**没有一条指向外部规则页**。更硬的一条：把 `Nikoli`、`Tatham` 这两个数和格常被挂上去的外部权威名 `grep -rn`
+全仓（含 `*.md *.json`），命中 **1 处，就是本段这句话自己**；代码、数据、页面、CI 里 **0 处** —— 所以"官方规则如此""日英双源"
+这类说法在本仓连一个可执行的字面量都没有，写不出来。
 能给出的出处只有仓内两处：代码本身（上面那几个 `file:line`），以及 `DESIGN.md` §2.1–§2.4。
 `DESIGN.md` 另外引用了 brief 的"规格 §2 与契约 §3"和 `/tmp/puzzle-brief/probe5.mjs`（§2.3 那条"DP 往列状态里加错号"的坑就是照抄它留下的），
 那两样都不在仓里，本轮没有可核对的副本，因此本 README 不转述它们的原文，只转述本仓代码与测试实际断言的东西。
@@ -56,11 +59,12 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 | 现场生成有边界、会终止 | `node test/make.test.mjs` | `MAX_ATTEMPTS` 必须被 honoring（`makeLot` 撞带子时 `attempted == 400` 且返回 `null`）；每条拒绝路径都记账；`js/*` 里不许混进穷举 | 实测 `rows: 14 fail: 0`；两条计时闸：穷举搜索 `< 20000ms`（`test/make.test.mjs:94`）、`< 1500 ms/题面`（`:140`） |
 | `js/core` 不知道有屏幕 | `node test/storage.test.mjs` | **源码级**扫描 `js/core/*.js` 里非注释行的 `window.`/`document.`，白名单只有 `storage.js`，而它必须暴露 `rawBackend`、必须 `throw`、消费者必须 `try` 包住；再断言除 `library.js` 外没有 core 模块伸出 `../` | 实测 `rows: 22 fail: 0` |
 | 静音/暂停/重开/存档解码**行为成立**，不是字符串命中 | `node test/browser.test.mjs` | 静音看 `log.osc`：挂起上下文后一次 `blip` 都不新建振荡器（把 gain 设 0 的假静音在这里红），浏览器拒绝挂起时照样 0 节点；暂停期间 `simSteps`/`simClock`/`accum` 三个读数都不许动，且盘面拒收点按；偏好与存档逐字段回落（`null`/数组/类型错/越界长度各一条垃圾样本，只丢那一条）；`sw.js` 在 node 里跑，同源子资源必须**先** `fetch` 再写缓存，断网才退缓存 | 实测 `rows: 28 fail: 0` |
-| 美术资产是真图、且可复现 | `node test/assets.test.mjs` | 13 张图逐张解 PNG 魔数与 IHDR（宽高、8 位 RGBA、>200 字节），尺寸与文件名/`manifest` 声称的 `sizes` 逐枚对账；`index.html` 的 href/src、`manifest.webmanifest` 的 icons、`css/game.css` 的 url()、`js/view.js` 的三处 `loadArt` 全部拿去跟磁盘对账；apple-touch-icon 唯一且 ≥180px；最后用 `python3 assets/gen/gen_art.py` 的默认 seed 往临时目录重跑一遍，逐张比 SHA-256 —— 盘上的图必须就是脚本的产物 | 实测 `rows: 5 fail: 0`，其中"重跑 13 张 SHA-256 逐张相同"本机 0.47s |
+| 美术资产是真图、且可复现 | `node test/assets.test.mjs` | 13 张图逐张解 PNG 魔数与 IHDR（宽高、8 位 RGBA、>200 字节），尺寸与文件名/`manifest` 声称的 `sizes` 逐枚对账；`index.html` 的 href/src、`manifest.webmanifest` 的 icons、`css/game.css` 的 url()、`js/view.js` 的三处 `loadArt`、`electron/main.cjs` 传给 `BrowserWindow` 的窗口 `icon` 全部拿去跟磁盘对账（桌面壳那枚还必须就在可复现清单里，且不许是"建好没人用"的死常量）；apple-touch-icon 唯一且 ≥180px；maskable 那张用纯 node（`zlib` inflate + 五种行滤波）解出像素，量母题的实际包围盒是否落在中央 80% 安全区内，并自带一发"把母题挪到角上必须判红"的阴性对照；最后用 `python3 assets/gen/gen_art.py` 的默认 seed 往临时目录重跑一遍，逐张比 SHA-256 —— 盘上的图必须就是脚本的产物 | 实测 `rows: 7 fail: 0`（安全区读数 `bbox=(94,94)-(431,426)`，允许 `51..460` ⇒ 在圈内），其中"重跑 13 张 SHA-256 逐张相同 + 解像素"本机 0.63s |
 | 关卡内三档帧率对拍（30/60/120Hz） | `node test/frame.test.mjs` | 真落子进关卡后逐帧喂虚拟时间：与最密档共同采到的**每个 sim 步号**上仿真钟/涟漪 age/半径/提示读数逐位相同（`bad === 0`）；同一目标步号越线时刻的钟差 ≤ 一帧步数（4 步）；喂满 1.000s 墙钟三档 `simSteps` 极差 ≤1；`reduceMotion` 下粒子恒 0 而仿真照跑；两发阴性对照必须判红（`accum += dt`→`+= 1/60`、`simClock += SIM_STEP`→`+= dt`） | 实测 `rows: 8 fail: 0`，读数见「门禁清单」一节 |
 
-上面 11 套 node 门禁合起来是 **200 条断言，0 失败**。`npm test` 本轮复跑过，每次都 `exit 0`。这一层没有 `RESULT:` 汇总行——每套自己打印一行 `rows: N fail: M`
-（格式来自 `tools/harness.mjs:32`），整套的汇总行 `=== ALL GREEN ===` 只在 `tools/verify.sh` 里出现，
+上面 11 套 node 门禁合起来是 **202 条断言，0 失败**（本轮逐套 `node test/<file>` 复跑相加：11+7+28+27+8+14+32+13+26+14+22）。
+`npm test` 本轮复跑过，每次都 `exit 0`。这一层没有 `RESULT:` 汇总行——每套自己打印一行 `rows: N fail: M`
+（格式来自 `tools/harness.mjs:43`），整套的汇总行 `=== ALL GREEN ===` 只在 `tools/verify.sh` 里出现，
 而那一层本轮没有跑（见「不承诺」一节）。
 
 ---
@@ -77,7 +81,7 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 | `unit` | `for f in test/*.test.mjs; do node "$f"; done` | 是（随 `npm test`，也逐个跑过） | 11 个文件全绿，见下表 |
 | `test` | `npm run check && npm run unit` | **是** | `exit 0`，交回 11 行 `rows: N fail: 0`（见下一节的逐条读数） |
 | `bake` | `node tools/bake.mjs` | **否** | 它按 `[4/4] wrote 40 lots -> js/data/lots.js` 改写题库源文件（`tools/bake.mjs:263`），文档轮不动已发货的题库，所以没跑；DESIGN 里那组 `wall=206.2s` 本轮未复现 |
-| `electron` | `electron .` | **否** | `dependencies`/`devDependencies` 都是 `{}`，仓里没有 `node_modules`，`electron` 也不在 PATH；`electron/main.cjs` 只是那份 34 行的壳 |
+| `electron` | `electron .` | **否** | `dependencies`/`devDependencies` 都是 `{}`，仓里没有 `node_modules`，`electron` 也不在 PATH；`electron/main.cjs` 只是那份 40 行的壳（本轮往里面加了 `icon: ICON`，指向盘上的 `icons/icon-512.png`，这条引用由 `test/assets.test.mjs` 守着；壳本身在本机仍不可执行） |
 | `verify` | `bash tools/verify.sh` | **否** | 本轮这台机器上已有一个别的仓的 headless Chrome 带着 `--remote-debugging-port=9373` 在听（`/tmp/sky-chrome-profile`），浏览器台架的纪律是同一时刻只留一个，所以没有派生它。要验的人自己跑，命令在「门禁清单」一节末尾。本文浏览器层的数字全部是源码点数，不是实测 |
 
 门禁之外还有两条可跑入口，本轮都验过：
@@ -109,7 +113,7 @@ node test/anchor.test.mjs # 只跑证明层：rows: 11 fail: 0
 | `test/make.test.mjs` | `rows: 14 fail: 0` | 0.44s |
 | `test/storage.test.mjs` | `rows: 22 fail: 0` | 0.03s（含源码扫描） |
 | `test/browser.test.mjs` | `rows: 28 fail: 0` | 0.05s（假 WebAudio + 假 DOM + 假 cache/ServiceWorkerGlobalScope，全在 node 里） |
-| `test/assets.test.mjs` | `rows: 5 fail: 0` | 0.47s（含把 13 张图用 `assets/gen/gen_art.py` 重跑一遍并逐张比 SHA-256；本机 Pillow 11.3.0） |
+| `test/assets.test.mjs` | `rows: 7 fail: 0` | 0.63s（含把 13 张图用 `assets/gen/gen_art.py` 重跑一遍并逐张比 SHA-256、以及纯 node inflate 解 maskable 像素量安全区；本机 Pillow 11.3.0） |
 | `test/frame.test.mjs` | `rows: 8 fail: 0` | 0.10s（三档 × 1 秒虚拟墙钟 + 3 份变异副本：119/120/119 步，变异一 62/122/242 步判红） |
 
 浏览器层（`bash tools/verify.sh` → `tools/playtest.mjs`，走真实 CDP 打 `http://127.0.0.1:5192/`）**本轮没有实测**，
@@ -125,16 +129,17 @@ node test/anchor.test.mjs # 只跑证明层：rows: 11 fail: 0
 | `@routes` | `#/c/7`、越界索引钳位（99999 与 0）、末关属顶档、`#/daily` 两次同盘且标签带日期、四档 `#/random/<band>/<token>` 各自落带且可复现（**循环内**，4 次）、同 token 跨档不同难度、换 token 换盘、裸 `#/random` 会铸造 token、`#/lot/<id>` 与未知 id 兜底、`#/nonsense` 仍发牌 | 16（实跑 19） |
 | `@save` | 双次点击才清空存档、清空后 `records` 归零且 `localStorage` 键为 `null`、解一关写入 `kakurasu.save.v1`、解锁推进到 2、`perfect` 打标、第 2 关可点第 3 关仍锁、面板回读"最佳"、每日槽写入、页内报 `persistent === true` | 14 |
 | `@reloaded` | 必须排在 `@save` 之后且在自己的驱动进程里跑：新页面从磁盘读回进度、第一关记录回来、货架显示已完成、表头计数、每日槽被记住、`reset` 后磁盘上什么都不留 | 6 |
-| `@pointer` | 真实 `Input.dispatchMouseEvent`：20 个控件都存在、整条认证解用鼠标点完、原地双点回到原画面、点线索槽不计、拖拽涂装一笔连出三格、越界与 gutter 点不动、键盘 `u/h/r/n` | 34（其中 3 处只在失败时说话：gutter 找不到点、认证解途中某格不在屏上、某口没计费 ⇒ 正常路径 31 行） |
+| `@pointer` | 真实 `Input.dispatchMouseEvent`：20 个控件都存在、整条认证解用鼠标点完、原地双点回到原画面、点线索槽不计、拖拽涂装一笔连出三格、越界与 gutter 点不动、键盘 `u/h/r/n`、`p` 暂停与恢复、**暂停中换关必须把新局解冻**（`window.kakurasu.state.paused === false`、`phase === 'PLAYING'`、暂停卡 `hidden`、且卡上文字已复位成「暂停」——这条本轮新加，钉住"换关带走上一局暂停态"那个修复） | 实测源码点 **39**（本轮按段落边界逐行数 `rec(` 调用；其中 3 处只在失败时说话：gutter 找不到点、认证解途中某格不在屏上、某口没计费 ⇒ 正常路径 **36** 行。旧读数 34 是数法不同，已被本轮推翻） |
 
-合计 **101 处**调用点；把 routes 那条 4 档循环展开、去掉那 3 条「只在失败时说话」的行，正常路径应交回 **101 行**（boot 15 / play 16 / routes 19 / save 14 / reloaded 6 / pointer 31）。第二道闸与控制台洁净绑在一起：`verify.sh:132` 对每段输出 grep
-`[EXCEPTION]|[log:error]|[error]|[warning]`，命中即算红——所以 `willReadFrequently`、内联 favicon 这些细节是门禁的一部分，不是风格。
+合计 **106 处**调用点；把 routes 那条 4 档循环展开、去掉那 3 条「只在失败时说话」的行，正常路径应交回 **106 行**（boot 15 / play 16 / routes 19 / save 14 / reloaded 6 / pointer 36）。第二道闸与控制台洁净绑在一起：`verify.sh:132` 对每段输出 grep
+`[EXCEPTION]|[log:error]|[error]|[warning]`，命中即算红——所以 `willReadFrequently`、favicon 必须指向盘上真 PNG（`icons/favicon-32.png`
+与 `-16.png`，有 `link rel=icon` 才有浏览器不再去要 `/favicon.ico` 那个会脏控制台的 404）这些细节是门禁的一部分，不是风格。
 
 CI 两道 job（`.github/workflows/ci.yml`，本机未观测，只按文件定义记录）：
 `unit` 在 ubuntu-latest / node 22 上跑与 `npm run check` **同一份 glob** 的 `node --check`，再逐个跑 `test/*.test.mjs`；
 `browser` 用 `SKIP_UNIT=1 WD_TIMEOUT=240 bash tools/verify.sh`，即只跑上面那 6 段。
 
-**这台机器上没有任何一道 node 闸读红**：`npm test` 的 8 行 `rows:` 全是 `fail: 0`，两条计时闸（anchor 的 20s、make 的 1500ms/题面）都远未触及。
+**这台机器上没有任何一道 node 闸读红**：`npm test` 的 11 行 `rows:` 全是 `fail: 0`，两条计时闸（anchor 的 20s、make 的 1500ms/题面）都远未触及。
 
 想补上浏览器层那一格读数，命令是 `bash tools/verify.sh`（全 6 段）或 `SCENARIOS="pointer" bash tools/verify.sh`（只跑真指针那一段）。
 前提是本机 `:5192` 与 `:9352` 空着、且没有另一个仓的 headless Chrome 在听 —— 后者脚本自己不检查，见本节开头。
@@ -143,22 +148,26 @@ CI 两道 job（`.github/workflows/ci.yml`，本机未观测，只按文件定�
 
 ## 目录结构（按真实 `ls`，行数为同一轮 `wc -l` 的输出）
 
-仓库根 13 项版本内容（再加一个 `.git`）：
+仓库根 17 项版本内容（再加一个 `.git`；本轮 `ls -A` 数出来的）：
 
 ```
-.github/workflows/  ci.yml · pages.yml      css/  game.css (110)
-js/  main.js (490) · view.js (391)          js/core/  count.js (277) · game.js (109) · grid.js (260)
-                                                      library.js (110) · logic.js (266) · make.js (187)
-                                                      rng.js (49) · storage.js (165)
-js/data/  lots.js (59)                      test/  8 个 *.test.mjs + anchorlib.mjs (138)
-tools/  bake.mjs (268) · harness.mjs (34) · playtest.mjs (679) · verify.sh (145)
-electron/  main.cjs (34)                    index.html (68) · server.cjs (69) · package.json (39)
-DESIGN.md (233) · README.md · LICENSE (21 行, MIT, "Copyright (c) 2026 z-biz-game") · .gitignore
+.github/workflows/  ci.yml (46) · pages.yml (45)     css/  game.css (157)
+js/  main.js (674) · view.js (599) · audio.js (128) · settings.js (70) · pwa.js (24)
+js/core/  count.js (277) · game.js (109) · grid.js (260) · library.js (110)
+          logic.js (266) · make.js (187) · rng.js (49) · storage.js (253)
+js/data/  lots.js (59)                    sw.js (50) · manifest.webmanifest (21)
+test/  11 个 *.test.mjs + anchorlib.mjs (138) + fakeworld.mjs (101)
+tools/  bake.mjs (268) · harness.mjs (45) · playtest.mjs (708) · verify.sh (145)
+electron/  main.cjs (40)                  index.html (114) · server.cjs (70) · package.json (39)
+assets/gen/  gen_art.py (426)             assets/img/ 3 张 PNG · icons/ 10 张 PNG（合计 13 张，逐枚对账在 assets 门禁里）
+DESIGN.md (236) · README.md · LICENSE (21 行, MIT, "Copyright (c) 2026 z-biz-game") · .gitignore
 ```
 
-`test/` 里 9 个 `.mjs`：8 个 `*.test.mjs`（`DESIGN.md:13` 那句"8 个 node 测试文件"与实数一致）加
+`test/` 里 13 个 `.mjs`：11 个 `*.test.mjs`（`DESIGN.md:13` 那句"11 个 node 测试文件"与实数一致）加
 `anchorlib.mjs`——它是全仓唯一允许做 `2^(r*c)` 穷举的地方，自带 `MAX_ENUM_CELLS = 20` 闸门（`test/anchorlib.mjs:14`），
-`js/*`、页面加载路径、`playtest.mjs` 都不引用它。测试层与 `js/core` **各写一遍权重**（`anchorlib.mjs` 不调用 `grid.js`），
+`js/*`、页面加载路径、`playtest.mjs` 都不引用它；以及 `fakeworld.mjs`（101 行，把"补一份能跑的 window/DOM/canvas 壳"这件事抽出来，
+由 `test/browser.test.mjs` 与 `test/frame.test.mjs` 共用，帧率对拍与普通行为断言因此跑在同一个假世界上）。
+测试层与 `js/core` **各写一遍权重**（`anchorlib.mjs` 不调用 `grid.js`），
 两边对得上才算证据。
 
 `css/` 只有 1 个文件、`electron/` 只有 1 个、`.github/workflows/` 只有 2 个——全部由 `ls` 核对过，没有虚构目录。
@@ -253,23 +262,27 @@ master  rank 4-409  marks 19-30  depthMax 4  backtracksMax 6  nodesMax 11  coreS
 
 * 点一格 = 选中它，立刻按 `(x+1)` 计入所在行的带权和、按 `(y+1)` 计入所在列的和；再点 = 取消，**两次都记点击数**。
 * `标记` 划叉的格子不计入任何和，只是给自己留记号：格值三态是 `js/core/game.js:18-20` 的 `OPEN = 0 / ON = 1 / NOTE = 2`
-  （前两个复用 `js/core/grid.js:16-17` 的 `EMPTY`/`MARKED`），`tap` 的三态轮转写在 `game.js:49`，提示与传播会尊重被划掉的格
+  （前两个复用 `js/core/grid.js:16-17` 的 `EMPTY`/`MARKED`），`tap` 的三态轮转写在 `game.js:45`，提示与传播会尊重被划掉的格
   （`test/logic.test.mjs` 有专门一条）。
-* 键盘（`js/main.js:391-395`）：`u` 撤销 · `h` 提示 · `r` 重开 · `n` 标记 · `escape` 收起结算卡。撤销也记一次点击，
+* 键盘（`js/main.js:518-542` 的 `keydown`）：`escape` 收起最上层卡 · `?`/`h` 玩法说明 · `space`/`enter` 继续或再来一次 ·
+  `p` 暂停 · `r` 重开 · `u` 撤销 · `n` 标记 · `g` 提示 · `m` 静音 · `f` 全屏；带 meta/ctrl/alt 的组合键一律放过，
+  焦点在按钮上时 `space`/`enter` 交回给按钮。撤销也记一次点击，
   因为"一次到位"是关于点击数的陈述（`@pointer`/`@play` 都有断言钉它）。
+  （此处旧文档把"提示"记在 `h` 上，本轮对源码核对后改回 `g`：`@pointer` 的两条断言分别是
+  `the h key opens the how-to overlay` 与 `the g key asks for a hint`。）
 * 提示只说**纯推理能证明**的格子；若求解器认为要假设，那是 `depth` 实测出来的，不是它懒得想。
 * 完成判定（`js/core/game.js:86`）：`isClueConsistent && isSolution` —— 前者就是 `statusOf(...).allOk`，即每条行列的带权和
   都恰好等于线索（`js/core/grid.js:202-204`），**且**盘面与那个被证明唯一的解逐格相同（`grid.js:206-210`）。
   两条计数器在数到 2 就停，语义要读准：`count === limit` 只表示"至少 limit 个"，`count < limit && !bailed` 才是精确，
   撞上限一律 `bailed` 并由调用方拒绝，不许把 bail 解释成"多解"。
-* 路由解析在 `js/main.js:52-57`，认这几种：`#/campaign/<n>` 与 `#/c/<n>`（同一支，索引越界钳位到首尾）、
+* 路由解析在 `js/main.js:60-67`（`parseHash`），认这几种：`#/campaign/<n>` 与 `#/c/<n>`（同一支，索引越界钳位到首尾）、
   `#/lot/<id>`、`#/daily`、`#/random/<tier>/<key>`（tier 缺省落 SHOAL，缺 key 时铸造一次并写回 URL），
   其余一律回落到战役 frontier。
 * `#/daily` 是 `hashSeed(YYYY-MM-DD) % 40` 落在**题库**下标上，纯函数、零搜索
   （本轮按当前产物现算：`2026-09-27` → `master-02`、`09-28` → `shoal-09`、`09-29` → `twined-06`；换一天就换一个，这条只有函数意义）。
   `#/random` 才会现场跑生成器，被 `MAX_ATTEMPTS` 与计数器上限夹住。
 * 存档只有一个 localStorage 键 `kakurasu.save.v1`（`js/core/storage.js:17`），清空要点两次。
-  页面钩子是 `window.kakurasu`，同时挂了别名 `window.kaku`（`js/main.js:488-490`），`version === 1`。
+  页面钩子是 `window.kakurasu`（`js/main.js:672`），同时挂了别名 `window.kaku`（`js/main.js:674`），`version === 1`（`js/main.js:558`）。
 
 ---
 
@@ -322,7 +335,7 @@ master  rank 4-409  marks 19-30  depthMax 4  backtracksMax 6  nodesMax 11  coreS
   `test/count.test.mjs` 另有两条"冗余线索抹掉仍唯一 + 独立枚举复核"。
   本仓因此把那条反证搬到**包含极小核心**上：`minimalCore()` 贪心删线索，删完剩下的每条都由独立穷举证明
   "再删它 ⇒ ≥2 解"，`coreSize`/`coreStatus` 逐行标在数据里。
-* **不承诺 8×8 及以上。** `checkDims` 是边长 4..8 且 `r*c <= 49`（`js/core/grid.js:20-31`）：
+* **不承诺 8×8 及以上。** `checkDims` 是边长 4..8 且 `r*c <= 49`（`js/core/grid.js:27-33`，常量在 `:20-25`）：
   7×7 与 6×8（48 格）在内，8×8 在外，`test/grid.test.mjs` 有正负例（3×3 与 8×8 都拒，且报错信息说得出为什么）。
   原因是 DP 的状态是列部分和向量，随列数组合爆炸——这是硬边界，不是性能调优项。
 * **不承诺 6×6/7×7 的 `coreSize` 是精确值。** 那 20 行是 `bounded`，数字是上界。

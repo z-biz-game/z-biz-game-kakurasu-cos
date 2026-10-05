@@ -198,7 +198,7 @@ export function statusOf(lot, cells) {
 
 // A board is "clue-consistent" when every weighted sum matches its clue. That is the
 // player-facing win test; `isSolution` additionally compares against the baked answer grid,
-// and the two cannot disagree while `solutions === 1` — which test/lot.test.mjs asserts.
+// and the two cannot disagree while `solutions === 1` — which test/lots.test.mjs asserts.
 export function isClueConsistent(lot, cells) {
   return statusOf(lot, cells).allOk;
 }

@@ -10,7 +10,7 @@ js/view.js   canvas 2D + 指针；只管像素与手势
 js/core/     grid model / 解数计数器 / 确定性求解器 / 生成器 / 存档 / rng —— 纯函数
 js/data/lots.js  40 关实测题库（tools/bake.mjs 产出，test/lots.test.mjs 复算）
 tools/       bake.mjs 出题+复验 · playtest.mjs 零依赖 CDP 驱动 · verify.sh 验收门 · harness.mjs
-test/        8 个 node 测试文件；anchorlib.mjs 是唯一允许做 2^(r·c) 穷举的地方
+test/        11 个 node 测试文件；穷举只许出现在 anchorlib.mjs，fakeworld.mjs 是 browser/frame 共用的假 window/DOM/canvas 世界
 ```
 
 ---
@@ -218,8 +218,9 @@ maxDpStates=39144  maxSolverNodes=11  maxCoreNodes=8527  wall=206.2s（40 关，
 * **端口**：本仓 web `:5192`、devtools `:9352`。跑之前 `pgrep -fl remote-debugging-port` +
   `lsof -nP -iTCP -sTCP:LISTEN` 查一遍：别的 builder 的 Chrome 停在错误端口上，会让驱动连到
   **别人的 tab**，然后把"0 browser asserts"当成通过。`verify.sh` 现在开头就查端口，占了就退 6。
-* `index.html` 的 favicon 是**内联 SVG data-URI**：`href="data:,"` 会让 `/favicon.ico` 的 404
-  进控制台，控制台不干净 = 断言红。
+* `index.html` 的 favicon 指向**盘上的真 PNG**（`icons/favicon-32.png` + `icons/favicon-16.png`，`test/assets.test.mjs` 拿磁盘逐枚对账）：
+  只要 `link rel=icon` 存在且命中，浏览器就不会去请求 `/favicon.ico`，那个 404 一进控制台，"控制台不干净 = 断言红"就红给你看。
+  （旧文档写的"内联 SVG data-URI"已随资产层落地作废：`grep xmlns index.html` 实测 0 处。）
 * `@reloaded` 必须排在 `@save` 之后、且在自己的驱动进程里跑（`eval` 不带 `nonav`），否则它
   分不清"模块缓存里还热着"和"磁盘上真有"。
 * 浏览器断言的 `async` 体在 Node 侧是**模板字面量的源码文本**，正斜杠要写 `\\/`，否则页面收到
