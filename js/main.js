@@ -593,6 +593,8 @@ const api = {
       ripples: view.fx().ripples,
       frames: view.fx().frames,
       texture: view.fx().texture,
+      glow: view.fx().glow,
+      glowBrass: view.fx().glowBrass,
       fullscreen: isFullscreen(),
       sw: app.sw.status,
       droppedRecords: store.dropped.records,

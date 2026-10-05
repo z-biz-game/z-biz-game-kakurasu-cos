@@ -4,11 +4,12 @@
 // board back through `progress()` for styling — there is no second copy of the rule in here.
 //
 // The picture is generated from two tokens (the clue gutters, the numbers, the grid, the marks,
-// the crosses) plus two bitmaps that `assets/gen/gen_art.py` bakes and this file actually draws:
+// the crosses) plus three bitmaps that `assets/gen/gen_art.py` bakes and this file actually draws:
 // `board-texture.png` under the board (a board with grain reads as a board, a flat rectangle
-// reads as a UI panel) and `glow-cyan-64.png` for the tap ripple and the hint pulse. Both are
-// loaded lazily and every draw path survives their absence — `node --check` and the headless
-// suites never fetch anything.
+// reads as a UI panel), `glow-cyan-64.png` for the hint pulse and the mark/undo ripple, and
+// `glow-brass-64.png` for the ripple of a cell that got selected — the two sprite colours are the
+// two colours the cells themselves use. Both are loaded lazily and every draw path survives their
+// absence — `node --check` and the headless suites never fetch anything.
 //
 // Geometry is measured from the canvas's own client box and mapped back out through
 // `cellPoint()`, so an automated finger presses where a cell actually is rather than where this
@@ -17,7 +18,8 @@
 // Motion is on a fixed step. `frame()` accumulates real elapsed seconds and runs the sim in
 // `SIM_STEP` slices, so a ripple's radius after 1.000 s of virtual time is the same number at
 // 30, 60 and 120 Hz. That accumulator is the one line the frame-rate harness indicts when it
-// goes wrong (`accum += elapsed` → `accum += 1/60` must change the verdict).
+// goes wrong (`accum += dt` → `accum += 1/60` must change the verdict, and `test/frame.test.mjs`
+// checks exactly that with a mutated copy of this file).
 
 import { progress, ON, NOTE } from './core/game.js';
 
@@ -76,7 +78,7 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
   }
 
   // 位图资产：加载失败或压根没有 Image（node、file:// 断网）都只是"没有纹理"，不是错误。
-  const art = { texture: null, pattern: null, glow: null };
+  const art = { texture: null, pattern: null, glow: null, glowBrass: null };
   function loadArt(src, key, then) {
     if (typeof Image !== 'function') return;
     const im = new Image();
@@ -93,6 +95,7 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
     if (p) art.pattern = p;
   });
   loadArt('assets/img/glow-cyan-64.png', 'glow');
+  loadArt('assets/img/glow-brass-64.png', 'glowBrass');
 
   function measure() {
     const box = canvas.getBoundingClientRect();
@@ -232,6 +235,7 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
   }
 
   // 涟漪的半径只依赖 r.age，而 r.age 由定步长累加而来 —— 所以 30/60/120Hz 画出来同一张图。
+  // 落子用铜（和它点亮的那块渐变同色），标记/撤销/提示用青蓝；缺一张退到另一张，两张都没有才描边。
   function drawRipples() {
     if (!ripples.length) return;
     ctx.save();
@@ -239,12 +243,17 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
       const t = Math.max(0, Math.min(1, p.age / RIPPLE_LIFE));
       const fade = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
       const rad = p.r0 + t * p.r1;
-      if (art.glow) {
+      const sprite = p.kind === 'tap'
+        ? (art.glowBrass || art.glow)
+        : (art.glow || art.glowBrass);
+      if (sprite) {
         ctx.globalAlpha = 0.55 * fade;
-        ctx.drawImage(art.glow, p.x - rad, p.y - rad, rad * 2, rad * 2);
+        ctx.drawImage(sprite, p.x - rad, p.y - rad, rad * 2, rad * 2);
       } else {
         ctx.globalAlpha = 0.5 * fade;
-        ctx.strokeStyle = p.kind === 'mark' ? 'rgba(159,171,185,1)' : 'rgba(120,220,255,1)';
+        ctx.strokeStyle = p.kind === 'mark'
+          ? 'rgba(159,171,185,1)'
+          : (p.kind === 'tap' ? 'rgba(216,161,60,1)' : 'rgba(120,220,255,1)');
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
@@ -378,8 +387,9 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
   function frame(now) {
     raf = requestAnimationFrame(frame);
     frames += 1;
-    // 沙箱/浏览器都可能给出不单调的时间戳，负数一律按 0 处理，否则 accum 会倒退。
-    const elapsed = Math.min(MAX_FRAME, Math.max(0, (now - (last || now)) / 1000));
+    // 这一帧真正过了多少秒。沙箱/浏览器都可能给出不单调的时间戳，负数一律按 0 处理，否则 accum 会倒退；
+    // 上限 MAX_FRAME 是"切出去半小时回来不许瞬移"的那道闸。dt 是全仓唯一的帧耗时来源。
+    const dt = Math.min(MAX_FRAME, Math.max(0, (now - (last || now)) / 1000));
     last = now;
     let busy = false;
     if (paused) {
@@ -387,7 +397,7 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
       accum = 0;
       busy = false;
     } else {
-      accum += elapsed; // ← 帧率对拍的钉头就在这行：改成 `accum += SIM_STEP` 三档立刻分叉
+      accum += dt; // ← 帧率对拍的钉头就在这行：改成 `accum += SIM_STEP` 三档立刻分叉
       let guard = 0;
       while (accum >= SIM_STEP && guard < 256) {
         accum -= SIM_STEP;
@@ -510,6 +520,7 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
         hintPos: hint ? hint.pos : -1,
         texture: !!art.pattern,
         glow: !!art.glow,
+        glowBrass: !!art.glowBrass,
       };
     },
     reducedMotion() {
