@@ -55,9 +55,10 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 | 现场生成有边界、会终止 | `node test/make.test.mjs` | `MAX_ATTEMPTS` 必须被 honoring（`makeLot` 撞带子时 `attempted == 400` 且返回 `null`）；每条拒绝路径都记账；`js/*` 里不许混进穷举 | 实测 `rows: 14 fail: 0`；两条计时闸：穷举搜索 `< 20000ms`（`test/make.test.mjs:94`）、`< 1500 ms/题面`（`:140`） |
 | `js/core` 不知道有屏幕 | `node test/storage.test.mjs` | **源码级**扫描 `js/core/*.js` 里非注释行的 `window.`/`document.`，白名单只有 `storage.js`，而它必须暴露 `rawBackend`、必须 `throw`、消费者必须 `try` 包住；再断言除 `library.js` 外没有 core 模块伸出 `../` | 实测 `rows: 22 fail: 0` |
 | 静音/暂停/重开/存档解码**行为成立**，不是字符串命中 | `node test/browser.test.mjs` | 静音看 `log.osc`：挂起上下文后一次 `blip` 都不新建振荡器（把 gain 设 0 的假静音在这里红），浏览器拒绝挂起时照样 0 节点；暂停期间 `simSteps`/`simClock`/`accum` 三个读数都不许动，且盘面拒收点按；偏好与存档逐字段回落（`null`/数组/类型错/越界长度各一条垃圾样本，只丢那一条）；`sw.js` 在 node 里跑，同源子资源必须**先** `fetch` 再写缓存，断网才退缓存 | 实测 `rows: 28 fail: 0` |
+| 美术资产是真图、且可复现 | `node test/assets.test.mjs` | 13 张图逐张解 PNG 魔数与 IHDR（宽高、8 位 RGBA、>200 字节），尺寸与文件名/`manifest` 声称的 `sizes` 逐枚对账；`index.html` 的 href/src、`manifest.webmanifest` 的 icons、`css/game.css` 的 url()、`js/view.js` 的三处 `loadArt` 全部拿去跟磁盘对账；apple-touch-icon 唯一且 ≥180px；最后用 `python3 assets/gen/gen_art.py` 的默认 seed 往临时目录重跑一遍，逐张比 SHA-256 —— 盘上的图必须就是脚本的产物 | 实测 `rows: 5 fail: 0`，其中"重跑 13 张 SHA-256 逐张相同"本机 0.47s |
 | 关卡内三档帧率对拍（30/60/120Hz） | `node test/frame.test.mjs` | 真落子进关卡后逐帧喂虚拟时间：与最密档共同采到的**每个 sim 步号**上仿真钟/涟漪 age/半径/提示读数逐位相同（`bad === 0`）；同一目标步号越线时刻的钟差 ≤ 一帧步数（4 步）；喂满 1.000s 墙钟三档 `simSteps` 极差 ≤1；`reduceMotion` 下粒子恒 0 而仿真照跑；两发阴性对照必须判红（`accum += dt`→`+= 1/60`、`simClock += SIM_STEP`→`+= dt`） | 实测 `rows: 8 fail: 0`，读数见「门禁清单」一节 |
 
-上面 10 套 node 门禁合起来是 **195 条断言，0 失败**。`npm test` 本轮复跑过，每次都 `exit 0`。这一层没有 `RESULT:` 汇总行——每套自己打印一行 `rows: N fail: M`
+上面 11 套 node 门禁合起来是 **200 条断言，0 失败**。`npm test` 本轮复跑过，每次都 `exit 0`。这一层没有 `RESULT:` 汇总行——每套自己打印一行 `rows: N fail: M`
 （格式来自 `tools/harness.mjs:32`），整套的汇总行 `=== ALL GREEN ===` 只在 `tools/verify.sh` 里出现，
 而那一层本轮没有跑（见「不承诺」一节）。
 
@@ -71,9 +72,9 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 | --- | --- | --- | --- |
 | `start` | `node server.cjs` | 是（直接起 `server.cjs`） | 打印 `数和 Kakurasu served at http://127.0.0.1:5192/  (ctrl+c to stop)`；`SIGINT` 后 `lsof` 确认端口已释放 |
 | `dev` | `node server.cjs 5192` | 与 `start` 同一条路径（只是把端口写死），未单独起 | 端口默认值 `5192` 在 `server.cjs:56` 与 `verify.sh:21` 各写一次 |
-| `check` | `for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check "$f"; done && echo OK` | 是（随 `npm test`） | 打印 `OK`；同一 glob 实测展开 **31 个文件**（js 根 5 + core/data 9 + server.cjs 1 + electron 1 + tools/*.mjs 3 + test/*.mjs 12） |
-| `unit` | `for f in test/*.test.mjs; do node "$f"; done` | 是（随 `npm test`，也逐个跑过） | 10 个文件全绿，见下表 |
-| `test` | `npm run check && npm run unit` | **是** | `exit 0`，交回 10 行 `rows: N fail: 0`（见下一节的逐条读数） |
+| `check` | `for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check "$f"; done && echo OK` | 是（随 `npm test`） | 打印 `OK`；同一 glob 实测展开 **32 个文件**（js 根 5 + core/data 9 + server.cjs 1 + electron 1 + tools/*.mjs 3 + test/*.mjs 13） |
+| `unit` | `for f in test/*.test.mjs; do node "$f"; done` | 是（随 `npm test`，也逐个跑过） | 11 个文件全绿，见下表 |
+| `test` | `npm run check && npm run unit` | **是** | `exit 0`，交回 11 行 `rows: N fail: 0`（见下一节的逐条读数） |
 | `bake` | `node tools/bake.mjs` | **否** | 它按 `[4/4] wrote 40 lots -> js/data/lots.js` 改写题库源文件（`tools/bake.mjs:263`），文档轮不动已发货的题库，所以没跑；DESIGN 里那组 `wall=206.2s` 本轮未复现 |
 | `electron` | `electron .` | **否** | `dependencies`/`devDependencies` 都是 `{}`，仓里没有 `node_modules`，`electron` 也不在 PATH；`electron/main.cjs` 只是那份 34 行的壳 |
 | `verify` | `bash tools/verify.sh` | **否** | 本轮这台机器上已有一个别的仓的 headless Chrome 带着 `--remote-debugging-port=9373` 在听（`/tmp/sky-chrome-profile`），浏览器台架的纪律是同一时刻只留一个，所以没有派生它。要验的人自己跑，命令在「门禁清单」一节末尾。本文浏览器层的数字全部是源码点数，不是实测 |
@@ -81,12 +82,12 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 门禁之外还有两条可跑入口，本轮都验过：
 
 ```bash
-node --test "test/*.test.mjs"  # 本轮：# tests 10  # pass 10  # fail 0
+node --test "test/*.test.mjs"  # 本轮：# tests 11  # pass 11  # fail 0
 node test/anchor.test.mjs # 只跑证明层：rows: 11 fail: 0
 ```
 
-注意 `node --test` 只报**文件级**的 10 条（本仓测试用自研 harness，自己 `console.log` + `process.exit`），
-真正的断言条数看每个文件自己打印的 `rows:` 行，别把 `tests 10` 当成"10 条断言"。
+注意 `node --test` 只报**文件级**的 11 条（本仓测试用自研 harness，自己 `console.log` + `process.exit`），
+真正的断言条数看每个文件自己打印的 `rows:` 行，别把 `tests 11` 当成"11 条断言"。
 **这一行本轮改过**：原来写的 `node --test test/`（以及不带斜杠的 `node --test test`）在本机 node v22.22.3 上
 交回 `Cannot find module '<repo>/test'` —— 目录形式不被接受，是原文档的一处错承诺，与测试内容无关。
 
@@ -107,6 +108,7 @@ node test/anchor.test.mjs # 只跑证明层：rows: 11 fail: 0
 | `test/make.test.mjs` | `rows: 14 fail: 0` | 0.44s |
 | `test/storage.test.mjs` | `rows: 22 fail: 0` | 0.03s（含源码扫描） |
 | `test/browser.test.mjs` | `rows: 28 fail: 0` | 0.05s（假 WebAudio + 假 DOM + 假 cache/ServiceWorkerGlobalScope，全在 node 里） |
+| `test/assets.test.mjs` | `rows: 5 fail: 0` | 0.47s（含把 13 张图用 `assets/gen/gen_art.py` 重跑一遍并逐张比 SHA-256；本机 Pillow 11.3.0） |
 | `test/frame.test.mjs` | `rows: 8 fail: 0` | 0.10s（三档 × 1 秒虚拟墙钟 + 3 份变异副本：119/120/119 步，变异一 62/122/242 步判红） |
 
 浏览器层（`bash tools/verify.sh` → `tools/playtest.mjs`，走真实 CDP 打 `http://127.0.0.1:5192/`）**本轮没有实测**，

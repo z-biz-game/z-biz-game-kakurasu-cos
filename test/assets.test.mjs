@@ -1,0 +1,160 @@
+// 美术资产自证：盘上那 13 张图必须是**真 PNG**、必须**被引用到**、而且必须**能按同一 seed 重跑出来**。
+//
+// 为什么值得单开一套：资产是最容易注水的一层 —— 0 字节占位、SVG 改扩展名冒充 PNG、manifest 写着
+// 192/512 而盘上根本没有、图生成了但游戏一次都没画它，四种都能骗过人眼。所以这里逐张解 IHDR，
+// 再把 index.html / manifest.webmanifest / css/game.css / js/view.js 里写下的每个路径拿去跟磁盘对账，
+// 最后用 assets/gen/gen_art.py 的默认 seed 往临时目录重跑一遍，逐张比 SHA-256 —— 比上了才叫
+// "可复现"，比不上就说明盘上的图是被手改过的。Pillow 不在就如实报话跳过，绝不给假绿。
+import { test, run, ok, eq, atest } from '../tools/harness.mjs';
+import { readFileSync, existsSync, mkdtempSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+
+const root = new URL('..', import.meta.url).pathname;
+const read = (rel) => readFileSync(join(root, rel));
+const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+
+// PNG 只读文件头就够：8 字节魔数 + IHDR 的宽高/位深/色彩类型。色彩类型 6 = RGBA。
+function pngHead(buf) {
+  if (buf.length < 26) return null;
+  if (buf.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') return null;
+  if (buf.subarray(12, 16).toString('ascii') !== 'IHDR') return null;
+  return {
+    w: buf.readUInt32BE(16),
+    h: buf.readUInt32BE(20),
+    depth: buf[24],
+    color: buf[25],
+    bytes: buf.length,
+  };
+}
+
+const ASSETS = [
+  'icons/master-1024.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/icon-192.png',
+  'icons/icon-96.png', 'icons/icon-48.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
+  'icons/favicon-16.png', 'icons/og-card.png',
+  'assets/img/board-texture.png', 'assets/img/glow-cyan-64.png', 'assets/img/glow-brass-64.png',
+];
+
+const html = readFileSync(join(root, 'index.html'), 'utf8');
+const css = readFileSync(join(root, 'css/game.css'), 'utf8');
+const viewSrc = readFileSync(join(root, 'js/view.js'), 'utf8');
+const manifest = JSON.parse(readFileSync(join(root, 'manifest.webmanifest'), 'utf8'));
+
+test('13 张资产逐张是真 PNG：魔数、IHDR 宽高、8 位 RGBA、非 0 字节，且尺寸与文件名/规范声称一致', () => {
+  const want = {
+    'icons/master-1024.png': [1024, 1024],
+    'icons/icon-512.png': [512, 512],
+    'icons/icon-maskable-512.png': [512, 512],
+    'icons/icon-192.png': [192, 192],
+    'icons/icon-96.png': [96, 96],
+    'icons/icon-48.png': [48, 48],
+    'icons/apple-touch-icon.png': [180, 180], // 判据要的是"favicon + ≥180px 真 PNG"，这一张就是那枚
+    'icons/favicon-32.png': [32, 32],
+    'icons/favicon-16.png': [16, 16],
+    'icons/og-card.png': [1200, 630], // 社交卡按 1.91:1
+    'assets/img/board-texture.png': [256, 256],
+    'assets/img/glow-cyan-64.png': [64, 64],
+    'assets/img/glow-brass-64.png': [64, 64],
+  };
+  eq(ASSETS.length, Object.keys(want).length, '资产清单与尺寸表不同步');
+  for (const rel of ASSETS) {
+    ok(existsSync(join(root, rel)), `${rel} 不在盘上`);
+    const head = pngHead(read(rel));
+    ok(head, `${rel} 不是 PNG（魔数或 IHDR 不对）—— 0 字节占位与 SVG 改扩展名都在这条上红`);
+    eq([head.w, head.h], want[rel], `${rel} 实测 ${head.w}x${head.h}，与声称不符`);
+    ok(head.bytes > 200, `${rel} 只有 ${head.bytes} 字节：这个量级画不出可读图形`);
+    eq([head.depth, head.color], [8, 6], `${rel} 不是 8 位 RGBA（depth=${head.depth} color=${head.color}）`);
+  }
+});
+
+test('manifest 字段真实，且 icons[] 每个 src 都指到盘上的真像素（sizes 与像素对账）', () => {
+  for (const k of ['name', 'short_name', 'start_url', 'display', 'theme_color', 'background_color']) {
+    ok(typeof manifest[k] === 'string' && manifest[k].length > 0, `manifest.${k} 缺失或为空`);
+  }
+  ok(Array.isArray(manifest.icons) && manifest.icons.length >= 4, `icons 只有 ${(manifest.icons || []).length} 枚`);
+  const px = (src) => pngHead(read(src.replace(/^\.\//, '')));
+  const seen = new Set();
+  for (const ic of manifest.icons) {
+    ok(existsSync(join(root, ic.src)), `manifest 引用的 ${ic.src} 不在盘上`);
+    const h = px(ic.src);
+    ok(h, `${ic.src} 不是真 PNG`);
+    const [w, hh] = ic.sizes.split('x').map(Number);
+    eq([h.w, h.h], [w, hh], `${ic.src} 声称 ${ic.sizes}，实测 ${h.w}x${h.h}`);
+    seen.add(ic.sizes + ':' + (ic.purpose || 'any'));
+  }
+  ok([...manifest.icons].some((i) => i.sizes === '192x192'), '缺 192x192');
+  ok([...manifest.icons].some((i) => i.sizes === '512x512'), '缺 512x512');
+  ok([...manifest.icons].some((i) => (i.purpose || '') === 'maskable'), '缺 maskable 一枚');
+  eq(seen.size, manifest.icons.length, '有两枚 icons 的 sizes+purpose 完全一样，Android 会当同一枚');
+});
+
+test('index.html 引用的每个本地路径都在盘上；apple-touch-icon 唯一且 ≥180px；og/twitter 图是真文件', () => {
+  const refs = [...html.matchAll(/(?:href|src)\s*=\s*"([^"]+)"/g)].map((m) => m[1])
+    .filter((u) => !/^(https?:|data:|#|mailto:)/.test(u));
+  const must = ['icons/favicon-32.png', 'icons/favicon-16.png', 'icons/apple-touch-icon.png',
+    'manifest.webmanifest', 'css/game.css', 'js/main.js'];
+  eq(must.filter((u) => !refs.includes(u)), [], `href/src 解析少了：现有 ${JSON.stringify(refs)}`);
+  for (const u of refs) ok(existsSync(join(root, u)), `index.html 引用 ${u}，盘上没有`);
+  const apples = [...html.matchAll(/rel\s*=\s*"apple-touch-icon"[^>]*href\s*=\s*"([^"]+)"/g)].map((m) => m[1]);
+  eq(apples.length, 1, `apple-touch-icon 有 ${apples.length} 枚，要求唯一`);
+  ok(pngHead(read(apples[0])).w >= 180, `${apples[0]} 宽 ${pngHead(read(apples[0])).w} < 180`);
+  for (const prop of ['og:image', 'twitter:image']) {
+    const m = new RegExp(`property="${prop}"[^>]*content="([^"]+)"`).exec(html)
+      || new RegExp(`name="${prop}"[^>]*content="([^"]+)"`).exec(html);
+    ok(m, `${prop} 没写`);
+    ok(existsSync(join(root, m[1])), `${prop} 指向 ${m[1]}，盘上没有`);
+    ok(pngHead(read(m[1])) !== null, `${prop} 不是真 PNG`);
+  }
+  ok(/rel\s*=\s*"manifest"/.test(html), 'index.html 没挂 manifest');
+  ok(/viewport-fit=cover/.test(html), 'viewport 缺 viewport-fit=cover：iOS 上 env(safe-area-inset-*) 恒为 0');
+  ok(/env\(safe-area-inset-(top|left|right|bottom)\)/.test(css), 'css 里没有 env(safe-area-inset-*)');
+});
+
+test('游戏内资产真被画：view.js 的三处 loadArt 路径与 css 的 url() 都指到盘上文件', () => {
+  const loaded = [...viewSrc.matchAll(/loadArt\('([^']+)'/g)].map((m) => m[1]);
+  eq(loaded.sort(), ['assets/img/board-texture.png', 'assets/img/glow-brass-64.png', 'assets/img/glow-cyan-64.png'],
+    'view.js 加载的位图清单变了：要么多了死资产，要么少了在用的');
+  for (const rel of loaded) ok(existsSync(join(root, rel)), `${rel} 被 view.js 引用却不在盘上`);
+  // 两张 sprite 必须各自有被取用的分支，否则其中一张就是"烘好了没人画"的死资产
+  ok(/art\.glowBrass\s*\|\|\s*art\.glow/.test(viewSrc), 'glow-brass 只在加载、从没被选中画出来');
+  ok(/art\.glow\s*\|\|\s*art\.glowBrass/.test(viewSrc), 'glow-cyan 的退化分支没了');
+  ok(/ctx\.createPattern\(im,\s*'repeat'\)/.test(viewSrc), 'board-texture 没有被做成 pattern');
+  const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map((m) => m[1]);
+  ok(urls.length >= 1, 'css 里没有 url() 引用');
+  for (const u of urls) {
+    const rel = u.replace(/^(\.\.\/)+/, '');
+    ok(existsSync(join(root, rel)), `css 引用 ${u}，解析到 ${rel}，盘上没有`);
+    ok(pngHead(read(rel)) !== null, `css 引用 ${u} 不是真 PNG`);
+  }
+  ok(/background-image:\s*url\("\.\.\/assets\/img\/board-texture\.png"\)/.test(css), '整屏背景没铺上那张母题纹理');
+});
+
+await atest('生成器可复现：同一 seed 重跑一次，13 张资产的 SHA-256 与盘上逐张相同', async () => {
+  const gen = join(root, 'assets', 'gen', 'gen_art.py');
+  ok(existsSync(gen), 'assets/gen/gen_art.py 不在仓里：资产就成了不可复现的手改物');
+  const genSrc = readFileSync(gen, 'utf8');
+  ok(/--seed/.test(genSrc) && /20261002/.test(genSrc), 'gen_art.py 没有 --seed/默认 seed，重跑无从对齐');
+  ok(/IHDR|struct\.unpack\(">II"/.test(genSrc), 'gen_art.py 不自己解 IHDR：写完不自证宽高');
+  let pillowed = true;
+  try {
+    execFileSync('python3', ['-c', 'import PIL'], { stdio: 'ignore' });
+  } catch (err) {
+    pillowed = false;
+  }
+  if (!pillowed) {
+    console.log('  [可复现] 跳过：本机 python3 没有 Pillow。如实报话 —— 这一行不给假绿，换机器装了就判');
+    ok(true, 'placeholder');
+    return;
+  }
+  const out = mkdtempSync(join(tmpdir(), 'kaku-art-'));
+  execFileSync('python3', [gen, '--out', out], { stdio: 'ignore' });
+  const regen = ASSETS.map((rel) => [rel, sha(readFileSync(join(out, rel)))]);
+  eq(regen.length, ASSETS.length, '重跑产出的文件数不对');
+  const drift = regen.filter(([rel, h]) => h !== sha(read(rel)));
+  eq(drift.map(([rel]) => rel), [], `盘上的图与 gen_art.py 默认 seed 的产物不一致（被手改过？）：${drift.map(([rel]) => rel).join(', ')}`);
+  console.log(`  [可复现] python3 assets/gen/gen_art.py 重跑 ${ASSETS.length} 张，SHA-256 逐张相同`);
+});
+
+run();

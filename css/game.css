@@ -22,7 +22,14 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
-  background: radial-gradient(120% 100% at 50% 0%, var(--bg-2), var(--bg) 60%);
+  /* 两层背景：上层是画布上那张同一张无缝纹理（颗粒铺满整屏，面板与页面才是同一张桌子；
+     gen_art.py 把它的最高 alpha 压在 17/255，所以读得出"有 grain"而读不出"脏"），
+     下层保留原来的径向渐变，再兜一层纯色，防止纹理没加载完时闪白。 */
+  background-color: var(--bg);
+  background-image: url("../assets/img/board-texture.png"), radial-gradient(120% 100% at 50% 0%, var(--bg-2), var(--bg) 60%);
+  background-repeat: repeat, no-repeat;
+  background-size: 256px 256px, cover;
+  background-attachment: fixed, fixed;
   color: var(--ink); font-family: var(--mono); -webkit-font-smoothing: antialiased;
   overflow: hidden; user-select: none; cursor: default;
 }
