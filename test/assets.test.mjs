@@ -2,7 +2,7 @@
 //
 // 为什么值得单开一套：资产是最容易注水的一层 —— 0 字节占位、SVG 改扩展名冒充 PNG、manifest 写着
 // 192/512 而盘上根本没有、图生成了但游戏一次都没画它，四种都能骗过人眼。所以这里逐张解 IHDR，
-// 再把 index.html / manifest.webmanifest / css/game.css / js/view.js 里写下的每个路径拿去跟磁盘对账，
+// 再把 index.html / manifest.webmanifest / css/game.css / js/view.js / electron/main.cjs 里写下的每个路径拿去跟磁盘对账，
 // 最后用 assets/gen/gen_art.py 的默认 seed 往临时目录重跑一遍，逐张比 SHA-256 —— 比上了才叫
 // "可复现"，比不上就说明盘上的图是被手改过的。Pillow 不在就如实报话跳过，绝不给假绿。
 import { test, run, ok, eq, atest } from '../tools/harness.mjs';
@@ -129,6 +129,20 @@ test('游戏内资产真被画：view.js 的三处 loadArt 路径与 css 的 url
     ok(pngHead(read(rel)) !== null, `css 引用 ${u} 不是真 PNG`);
   }
   ok(/background-image:\s*url\("\.\.\/assets\/img\/board-texture\.png"\)/.test(css), '整屏背景没铺上那张母题纹理');
+});
+
+test('桌面壳也真用上母题：electron/main.cjs 的窗口 icon 指到盘上的真 PNG，且这张在可复现清单里', () => {
+  const mainSrc = readFileSync(join(root, 'electron', 'main.cjs'), 'utf8');
+  const m = /path\.join\(__dirname,\s*'\.\.\/([^']+)'\)/.exec(mainSrc);
+  ok(m, 'electron/main.cjs 里没有 path.join(__dirname, "../…") 形式的资产路径：桌面壳又跑 Electron 默认图标了');
+  const rel = m[1];
+  ok(rel.endsWith('.png'), `桌面壳图标不是 PNG：${rel}`);
+  ok(existsSync(join(root, rel)), `BrowserWindow 的 icon 指到 ${rel}，盘上没有`);
+  const head = pngHead(read(rel));
+  ok(head, `${rel} 不是真 PNG`);
+  ok(head.w >= 256 && head.h >= 256, `桌面壳图标 ${head.w}x${head.h}，任务栏尺寸下会糊`);
+  ok(ASSETS.includes(rel), `${rel} 不在 gen_art.py 的资产清单里：换 seed 重跑就对不上`);
+  ok(/icon:\s*ICON/.test(mainSrc), 'ICON 常量没被传进 BrowserWindow —— 建好了没人用的死引用');
 });
 
 await atest('生成器可复现：同一 seed 重跑一次，13 张资产的 SHA-256 与盘上逐张相同', async () => {
