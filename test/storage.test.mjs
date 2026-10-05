@@ -235,11 +235,13 @@ test('reset really clears both the cache and the disk', () => {
   });
 });
 
-test('notes are tallied separately from solves', () => {
+test('存档的 stats 里只有真有人写的字段（notes 那一项已删：全仓零调用点的计数器就是假数据面）', () => {
   store.reset();
-  eq(store.note(), 1);
-  eq(store.note(), 2);
-  eq(store.stats.notes, 2);
+  eq(Object.keys(store.stats).sort(), ['hints', 'perfect', 'solves', 'taps']);
+  eq(store.note, undefined, 'store.note() 已删：没有调用点的计数器不该留在 API 上');
+  store.solve('shoal-09', { taps: 5, par: 4, hints: 1 });
+  eq(store.stats.notes, undefined, 'solve() 不许顺手再造一个没人读的字段');
+  eq([store.stats.solves, store.stats.hints, store.stats.taps], [1, 1, 5]);
 });
 
 // ---- the layering rule that makes all of this testable ----------------------------------

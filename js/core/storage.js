@@ -23,7 +23,7 @@ function blank() {
     records: {},
     daily: {},
     unlocked: 1,
-    stats: { solves: 0, perfect: 0, taps: 0, hints: 0, notes: 0 },
+    stats: { solves: 0, perfect: 0, taps: 0, hints: 0 },
   };
 }
 
@@ -232,13 +232,6 @@ export const store = {
     if (taps <= par && !hints) s.stats.perfect += 1;
     persist();
     return cur;
-  },
-
-  note() {
-    const s = load();
-    s.stats.notes += 1;
-    persist();
-    return s.stats.notes;
   },
 
   // Wipe: both the in-memory cache and whatever is on disk. `js/main.js` arms this behind a

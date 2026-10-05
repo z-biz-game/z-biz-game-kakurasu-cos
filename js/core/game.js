@@ -80,7 +80,7 @@ export function progress(game) {
 
 // The completion test has two halves and both are checked: every weighted line sum matches,
 // and the board is the baked answer grid cell for cell. While `solutions === 1` the two
-// cannot disagree — that implication is what test/lot.test.mjs pins down — and stating both
+// cannot disagree — that implication is what test/lots.test.mjs pins down — and stating both
 // means a lot whose uniqueness claim were ever wrong cannot quietly read as a win.
 export function checkDone(game) {
   const ok = isClueConsistent(game.lot, game.cells) && isSolution(game.lot, game.cells);
