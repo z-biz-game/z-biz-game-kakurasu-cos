@@ -8,8 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SETTINGS_KEY, defaults, readSettings, writeSettings } from '../js/settings.js';
 import { registerServiceWorker } from '../js/pwa.js';
-import { createGame, tap as tapCell } from '../js/core/game.js';
-import { at } from '../js/core/library.js';
+import { makeWorld, freshView, press } from './fakeworld.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 
@@ -275,87 +274,8 @@ test('暂停/静音/全屏/玩法四个 HUD 按钮都存在且被 main.js 绑到
   ok(/matchMedia/.test(readFileSync(join(root, 'js', 'view.js'), 'utf8')), 'reduceMotion 要真的读媒体查询');
 });
 
-// ---- view：reduceMotion 与输入回落（把 view 要的几个全局补上，node 里就能跑）--------------------
-let viewSeq = 0;
-function makeWorld({ matches = false, pointer = true } = {}) {
-  const listeners = new Map();
-  const box = { left: 0, top: 0, right: 480, bottom: 480, width: 480, height: 480 };
-  const base = {
-    fillStyle: '', strokeStyle: '', font: '', globalAlpha: 1, lineWidth: 1, textAlign: '', textBaseline: '',
-    shadowBlur: 0, shadowColor: '', globalCompositeOperation: '', lineCap: '', lineJoin: '', miterLimit: 10, filter: 'none',
-  };
-  const ctx = new Proxy(base, {
-    get(t, k) {
-      if (k in t) return t[k];
-      if (k === 'measureText') return () => ({ width: 8, actualBoundingBoxAscent: 8, actualBoundingBoxDescent: 2 });
-      if (k === 'getImageData') return () => ({ data: new Uint8ClampedArray(4 * 64), width: 8, height: 8 });
-      if (k === 'createPattern') return () => ({ __pattern: true });
-      if (k === 'createLinearGradient' || k === 'createRadialGradient') return () => ({ addColorStop() {} });
-      return () => {};
-    },
-    set(t, k, v) { t[k] = v; return true; },
-  });
-  const canvas = {
-    width: 0, height: 0, style: {}, className: '',
-    getContext: () => ctx,
-    getBoundingClientRect: () => box,
-    addEventListener: (t, fn) => { if (!listeners.has(t)) listeners.set(t, []); listeners.get(t).push(fn); },
-    removeEventListener: () => {}, setAttribute: () => {}, getAttribute: () => null, toDataURL: () => 'data:,',
-  };
-  let pending = null;
-  let changeHandler = null;
-  globalThis.requestAnimationFrame = (cb) => { pending = cb; return 1; };
-  globalThis.cancelAnimationFrame = () => { pending = null; };
-  globalThis.Image = class {
-    constructor() { this.width = 64; this.height = 64; }
-    set src(v) { this._s = v; queueMicrotask(() => { if (this.onload) this.onload(); }); }
-    get src() { return this._s; }
-  };
-  globalThis.window = {
-    devicePixelRatio: 1,
-    PointerEvent: pointer ? function PointerEvent() {} : undefined,
-    matchMedia: () => ({ matches, addEventListener: (t, fn) => { if (t === 'change') changeHandler = fn; }, removeEventListener: () => {} }),
-    addEventListener: () => {}, removeEventListener: () => {},
-  };
-  return {
-    canvas,
-    listeners,
-    dispatch(type, ev) { for (const fn of (listeners.get(type) || [])) fn(ev); },
-    pump(frames, dtMs, from = 1000) {
-      let c = from;
-      for (let i = 0; i < frames; i += 1) {
-        c += dtMs;
-        const cb = pending;
-        pending = null;
-        if (cb) cb(c);
-      }
-      return c;
-    },
-    setReducedMotion(on) { if (changeHandler) changeHandler({ matches: !!on }); },
-  };
-}
-
-async function freshView(world) {
-  const { createView } = await import(`../js/view.js?view=${(viewSeq += 1)}`);
-  const game = createGame(at(1)); // 真的第 1 关
-  const view = createView(world.canvas, {
-    onTap: (pos, note) => tapCell(game, pos, { note }),
-    onIllegal: () => false,
-    onPaint: () => {},
-    onFrame: () => {},
-  });
-  view.attach(game);
-  view.measure();
-  view.start();
-  return { game, view };
-}
-
-const press = (world, pt, type = 'pointerdown', extra = {}) => {
-  world.dispatch(type, { clientX: pt.x, clientY: pt.y, buttons: 1, button: 0, preventDefault() {}, ...extra });
-  const upType = type === 'touchstart' ? 'touchend' : (type === 'mousedown' ? 'mouseup' : 'pointerup');
-  if (upType === 'touchend') world.dispatch(upType, { changedTouches: [], preventDefault() {} });
-  else world.dispatch(upType, { clientX: pt.x, clientY: pt.y, buttons: 0, preventDefault() {} });
-};
+// ---- view：reduceMotion、输入回落、暂停冻结（那块补全局的壳抽到了 test/fakeworld.mjs，
+//      帧率对拍 test/frame.test.mjs 用同一块壳跑正版与变异副本）-----------------------
 
 await atest('reduceMotion 命中时玩法照改、粒子为零（降级的是动效不是规则）', async () => {
   const world = makeWorld({ matches: true });
@@ -439,6 +359,7 @@ await atest('暂停时仿真不推进、盘面拒收点按，恢复后两边都�
 });
 
 // ---- service worker：执行 sw.js，问它到底先网络还是先缓存 --------------------------------------------
+let swSeq = 0;
 async function loadSw({ origin = 'https://game.example', netOk = true } = {}) {
   const handlers = {};
   const buckets = new Map();
@@ -479,7 +400,7 @@ async function loadSw({ origin = 'https://game.example', netOk = true } = {}) {
     if (!netOk) throw new Error('offline');
     return res('net');
   };
-  await import(`../sw.js?sw=${(viewSeq += 1)}`);
+  await import(`../sw.js?sw=${(swSeq += 1)}`);
   return {
     calls,
     order,
