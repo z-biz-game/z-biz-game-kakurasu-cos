@@ -141,6 +141,10 @@ echo "=== console ==="
 node tools/playtest.mjs logs
 kill $WD 2>/dev/null
 wait $WD 2>/dev/null
+# 文档行号对账：README/DESIGN 里每一条 `path:行号` 读回盘上核对。插在 wait 之后是硬约束——
+# 本文档引用了 verify.sh 的 20/21/35-39/88/132 行，往这些行上面插任何东西都会把文档的引用挪歪。
+echo "=== doctest ==="
+node tools/docs-test.mjs || FAILED=1
 # 部署集闸：ci.yml 跑这两步、本地整闸以前一次都不跑。缺这一步就是「本地全绿、线上 404 自己的
 # manifest / sw.js / 图标」这一整类坏法。它不碰 Chrome，也不读页面，纯查产物。
 echo "=== deploy-set ==="
