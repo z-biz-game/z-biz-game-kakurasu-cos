@@ -1,21 +1,26 @@
 {
-  "name": "数和 · KAKURASU",
+  "name": "数和",
   "short_name": "数和",
-  "description": "每行每列的带权和等于线索。解数由两条互相独立的计数器算出，4×4 全空间 65536 个棋盘已逐位对账。",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": ".",
   "display": "standalone",
-  "orientation": "any",
-  "background_color": "#101217",
-  "theme_color": "#14161a",
-  "lang": "zh-CN",
-  "categories": ["games", "puzzle"],
+  "background_color": "#0a0a12",
+  "theme_color": "#0a0a12",
   "icons": [
-    { "src": "icons/favicon-32.png", "sizes": "32x32", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-48.png", "sizes": "48x48", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

@@ -51,6 +51,12 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
   let geom = { cell: 30, x0: 40, y0: 40, w: 320, h: 320, clue: 14 };
   let hint = null; // { pos, until } — `until` 是**仿真时刻**，不是 performance.now()
   let raf = 0;
+  // ---- 减弱动效（prefers-reduced-motion）----
+  // 提示格的呼吸环按 t = (now % 1100) / 1100 变粗变大变淡，是纯装饰。
+  // 减弱动效下把 t 钉在 0.5：环照画、格照指，只停相位。
+  let reduceMotion = false;
+  const ringPhase = () => (reduceMotion ? 0.5 : (performance.now() % 1100) / 1100);
+
   let last = 0;
   let warm = 0; // the first frames always repaint, so the canvas is never blank
   let paint = null; // { value, seen:Set } while a drag is in progress

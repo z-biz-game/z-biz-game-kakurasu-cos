@@ -1,50 +1,56 @@
-// 数和 · KAKURASU 的离线壳。
-//
-// 缓存名带版本号（VERSION）：每次发版改这一个常量，activate 里把所有非当前名的 cache 全删掉，
-// 于是旧版本不会留在设备上占空间、也不会被误命中。
-//
-// 策略是**同源子资源网络优先、失败退缓存**。这里刻意不用 cache-first：本仓的 js/css 是
-// 无 hash 的裸文件名（index.html 直接引 css/game.css、js/main.js），一旦 cache-first 把它们
-// 钉死，发新版就会出现"新 HTML 配旧 JS"的鬼状态 —— 玩家看到的界面和跑着的规则不是同一份。
-// 断网时才退到缓存，那正是"上次成功抓取的那一份"，自洽。
 'use strict';
+// 离线可用 + 永不被旧缓存钉住。
+//
+// 两条实测换来的口径：
+//   1) 一律 **网络优先**，命中网络才回填缓存。手工 VERSION + cache-first 的组合，
+//      发出去的 HTML 会配上上一版的 js/css，出一个"新界面配旧逻辑"的鬼状态，
+//      而且玩家自己无法恢复（只能等缓存过期）。
+//   2) 缓存名带版本号（activate 时清掉非本版的名字）。改版**不需要**同步 bump：
+//      同名文件重绘之后，网络优先这一条保证客户端下一次联网就拿到新字节。
+const VERSION = 'kakurasu-cos-v1';
+const CACHE = `${VERSION}-shell`;
+const PRECACHE = ['index.html', 'manifest.webmanifest'];
 
-const VERSION = 'kakurasu-v1';
-
-self.addEventListener('install', () => {
-  self.skipWaiting();
+self.addEventListener('install', (ev) => {
+  // 首屏两件套先抓下来：断网时至少能打开界面，而不是浏览器的错误页。
+  ev.waitUntil(
+    caches.open(CACHE).then((c) => c.addAll(PRECACHE).catch(() => {})).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (ev) => {
   ev.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (ev) => {
   const req = ev.request;
   if (req.method !== 'GET') return;
-  let url;
-  try {
-    url = new URL(req.url);
-  } catch (err) {
-    return; // 解析不了的请求（data:、blob:）不是我们的地盘
-  }
-  if (url.origin !== self.location.origin) return; // 第三方资源不接管，也不冒充接管
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
 
   ev.respondWith(
     fetch(req)
       .then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put(req, copy));
+          caches.open(CACHE).then((c) => c.put(req, copy));
         }
         return res;
       })
-      .catch(() => caches.match(req).then((hit) => hit
-        // 离线打开导航请求时退回缓存里的 index.html，别白屏
-        || (req.mode === 'navigate' ? caches.match('./') : Response.error()))),
+      .catch(async () => {
+        const hit = await caches.match(req);
+        if (hit) return hit;
+        // 导航请求（地址栏/刷新/桌面图标）离线时回落到缓存的那份壳，不白屏。
+        if (req.mode === 'navigate') {
+          const shell = await caches.match('index.html');
+          if (shell) return shell;
+        }
+        return Response.error();
+      })
   );
 });
