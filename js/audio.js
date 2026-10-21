@@ -109,6 +109,9 @@ export const audio = {
     sync();
     return paused;
   },
+  // blip 同时以具名导出和对象方法两种形状存在：main.js 走的是 audio.blip(...)，
+  // 直接 import { blip } 的调用方拿到的仍是同一份实现（不是第二套音效逻辑）。
+  blip(kind) { return blip(kind); },
   // 用户手势里调一次，让上下文在允许出声的时机被建起来（autoplay 策略）。
   unlock() {
     if (muted) return false;
