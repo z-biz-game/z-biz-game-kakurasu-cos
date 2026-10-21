@@ -54,7 +54,11 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
   // ---- 减弱动效（prefers-reduced-motion）----
   // 提示格的呼吸环按 t = (now % 1100) / 1100 变粗变大变淡，是纯装饰。
   // 减弱动效下把 t 钉在 0.5：环照画、格照指，只停相位。
-  let reduceMotion = false;
+  //
+  // reduceMotion 只有**一个**声明，在下面 matchQuery 那块（并线时两侧各声明了一次：
+  // 一份是写死的 false，一份从媒体查询取值并订阅变化 —— 同名顶层声明在 ES module 里
+  // 是 SyntaxError，整份 view 模块一行都不执行）。这里先用法，下面的声明随后初始化它；
+  // ringPhase 是闭包，调用时才读这个变量，所以顺序不影响它。
   const ringPhase = () => (reduceMotion ? 0.5 : (performance.now() % 1100) / 1100);
 
   let last = 0;

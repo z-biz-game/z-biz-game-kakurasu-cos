@@ -41,6 +41,11 @@ function intIn(v, max) {
 
 // 第二段解码的第一半：一条记录坏掉只丢这一条。`null`、缺字段、类型错、越界值各走各的分支，
 // 都不许把同一份存档里其他关卡的成绩一起带走 —— 那是"整局冻死"的成因。
+//
+// 这一份是**唯一**的 sanitizeRecords：并线时两侧各有一份同名的，一份走 decodeSave（还报丢弃条数），
+// 一份是逐字段归一后直接丢整条、且不报数 —— 而 load() 走的是前者。
+// 同名顶层声明在 ES module 里是 SyntaxError，整份存储模块一行都不执行（整局不可玩）；
+// 被删掉的那一份没有任何调用点，是并线拼出来的死代码。
 export function sanitizeRecords(raw) {
   const out = { records: {}, dropped: 0 };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -145,36 +150,6 @@ function current() {
   } catch (err) {
     return null; // no window (node), blocked storage, or a throwing getter: memory-only
   }
-}
-
-// 数字字段的归一自带一份，不依赖仓里有没有 count() —— 少一层隐式耦合。
-function recordNum(v) {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
-}
-
-// 存档两段式解码的第一段：整档 JSON 落到这里之后，**逐字段**归一。
-// 一条记录不是"能用/不能用"二选一 —— 类型错的字段自己退成默认值，整条照样留下。
-// 第二段（sanitizeRecords）在下面：它只丢掉归一后彻底没意义的记录，别的记录不受牵连。
-function sanitizeRecord(r) {
-  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
-  const out = {};
-  out.solved = !!r.solved;
-  out.best = recordNum(r.best);
-  out.plays = recordNum(r.plays);
-  out.perfect = !!r.perfect;
-  return out;
-}
-
-// 逐条隔离：坏的那条丢掉，好的那些原样留下，绝不因为一条把整份存档作废。
-function sanitizeRecords(p) {
-  const out = {};
-  if (!p || typeof p !== 'object' || Array.isArray(p)) return out;
-  for (const [id, rec] of Object.entries(p)) {
-    const clean = sanitizeRecord(rec);
-    if (clean) out[id] = clean;
-  }
-  return out;
 }
 
 function load() {

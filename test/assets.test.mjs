@@ -122,6 +122,9 @@ const html = readFileSync(join(root, 'index.html'), 'utf8');
 const css = readFileSync(join(root, 'css/game.css'), 'utf8');
 const viewSrc = readFileSync(join(root, 'js/view.js'), 'utf8');
 const manifest = JSON.parse(readFileSync(join(root, 'manifest.webmanifest'), 'utf8'));
+// 站点部署前缀：社交图若写绝对 URL，就按它剥掉前缀再落地查文件。
+// 从 README 里取，部署集闸（tools/deploy-set.mjs）也取同一处，两处同源。
+const PAGES = ((readFileSync(join(root, 'README.md'), 'utf8')).match(/https:\/\/z-biz-game\.github\.io\/[A-Za-z0-9._-]+\//) || [''])[0];
 
 test('13 张资产逐张是真 PNG：魔数、IHDR 宽高、8 位 RGBA、非 0 字节，且尺寸与文件名/规范声称一致', () => {
   const want = {
@@ -185,8 +188,15 @@ test('index.html 引用的每个本地路径都在盘上；apple-touch-icon 唯�
     const m = new RegExp(`property="${prop}"[^>]*content="([^"]+)"`).exec(html)
       || new RegExp(`name="${prop}"[^>]*content="([^"]+)"`).exec(html);
     ok(m, `${prop} 没写`);
-    ok(existsSync(join(root, m[1])), `${prop} 指向 ${m[1]}，盘上没有`);
-    ok(pngHead(read(m[1])) !== null, `${prop} 不是真 PNG`);
+    // 社交图可以写站点绝对 URL（抓取器读的是别人页面上的字符串，不会替我们补 /<slug>/，
+    // 部署集闸的 R7 就是管这件事的），也可以写相对路径 —— 两种写法都得落到盘上那张真 PNG，
+    // 所以这里先把站点前缀剥掉再落地查文件，两种写法都认。
+    // 前缀从 README 里取（部署集闸也这么取，两处同源），取不到就按 origin + 第一段路径剥。
+    const rel = PAGES && m[1].startsWith(PAGES)
+      ? m[1].slice(PAGES.length)
+      : m[1].replace(/^https?:\/\/[^/]+\/[^/]+\//, '').replace(/^https?:\/\/[^/]+\//, '');
+    ok(existsSync(join(root, rel)), `${prop} 指向 ${m[1]}（落地 ${rel}），盘上没有`);
+    ok(pngHead(read(rel)) !== null, `${prop} 不是真 PNG`);
   }
   ok(/rel\s*=\s*"manifest"/.test(html), 'index.html 没挂 manifest');
   ok(/viewport-fit=cover/.test(html), 'viewport 缺 viewport-fit=cover：iOS 上 env(safe-area-inset-*) 恒为 0');
