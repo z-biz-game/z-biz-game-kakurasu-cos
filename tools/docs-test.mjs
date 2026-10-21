@@ -215,7 +215,11 @@ function ok(a, b, detail = '') {
 }
 
 const docFiles = fs.readdirSync(ROOT).filter((f) => f.endsWith('.md'));
-ok(docFiles.length === 2 && ['README.md', 'DESIGN.md'].every((f) => docFiles.includes(f)),
+// 这一格钉的是「仓根下有几份 .md」这个实数：README、DESIGN，加上规范要求写的 deliverable.md。
+// 期望值随之更新为 3，断言强度不变（仍然是"读的是整个目录，不是一份手抄名单"——
+// 少一份、多一份、或者名单里那份不在盘上，都判红）。
+const EXPECT_DOCS = ['README.md', 'DESIGN.md', 'deliverable.md'];
+ok(docFiles.length === EXPECT_DOCS.length && EXPECT_DOCS.every((f) => docFiles.includes(f)),
   'D1 输入集：本仓根下的 .md 都被这条腿读进来了（读的是整个目录，不是一份手抄名单）',
   docFiles.join(','));
 
