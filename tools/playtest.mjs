@@ -230,6 +230,27 @@ async function pointerScenario(cdp, sessionId, runJS) {
 
   const ids = await runJS(`['grid','modes','totals','crumbs','readout','hintline','curtain','stars','verdict','tally','again','next','undo','hint','note','restart','share','shelf','wipe','toast']
     .map((i) => [i, !!document.getElementById(i)])`);
+  // 画面稳定后再比。字体与纹理是异步就位的：落子前抓的第一张快照可能还是「纹理没到」
+  // 的那张，拿它当基准去比「落子两次之后」，比的是环境噪声而不是游戏状态。
+  // 连续三次像素哈希相同即视为稳定（涟漪寿命 0.42s，80ms 一取足够分辨）。
+  const settlePx = async (maxMs = 4000) => {
+    const t0 = Date.now();
+    let last = null;
+    let same = 0;
+    while (Date.now() - t0 < maxMs) {
+      const px = await runJS('window.kakurasu.pixels()');
+      if (px === last) {
+        same += 1;
+        if (same >= 3) return px;
+      } else {
+        same = 0;
+        last = px;
+      }
+      await sleep(80);
+    }
+    return last;
+  };
+
   rec('every control the shell reaches for exists', ids.every(([, on]) => on), Object.fromEntries(ids));
 
   await runJS(`window.kakurasu.load('#/lot/shoal-01'); 'ok'`);
@@ -238,6 +259,9 @@ async function pointerScenario(cdp, sessionId, runJS) {
     const g = window.kakurasu;
     return { state: g.state, lot: g.lot(), cells: g.cells(), text: g.gridText(), px: g.pixels(), lit: g.painted(), sums: g.sums() };
   })()`);
+  const basePx = await settlePx(); // 稳定后的基准画面
+  // 基准画面的像素快照：落子两次之后要拿它当「画面回到初始」的对照。
+  await runJS(`(() => { const c = document.getElementById('grid'); window.__pxBase = c.getContext('2d').getImageData(0, 0, c.width, c.height).data.slice(); return 1; })()`);
   const par = start.state.par;
   rec('a lot loads with a certified answer and a tap floor to match', start.state.id === 'shoal-01' && par === start.lot.solution.split('').filter((ch) => ch === '1').length,
     { id: start.state.id, par, solution: start.lot.solution });
@@ -289,9 +313,29 @@ async function pointerScenario(cdp, sessionId, runJS) {
   // Press and release in the same place twice: the cell returns to empty and the board, after
   // the animation settles, is the picture it was.
   await tapCell(first);
-  await sleep(250);
+  // 等涟漪散尽再比画面：js/view.js 的 RIPPLE_LIFE 是 0.42 秒，点一下就有一圈涟漪，
+  // 250ms 时它还在画布上（像素哈希当然对不上初始那张）。这里等 600ms —— 寿命加余量。
+  await sleep(600);
   const back = await runJS(`(() => { const g = window.kakurasu; return { taps: g.state.taps, cells: g.cells(), px: g.pixels() }; })()`);
-  rec('tapping the same cell twice returns the board', back.cells.every((v) => v === 0) && back.px === start.px, { taps: back.taps, px: back.px, start: start.px });
+  const backPx = await settlePx(); // 同样等稳定：涟漪散尽后的那张才算数
+  // 「画面回到落子前那张」按**肉眼可见的差异为零**来判，而不是像素哈希逐位相等：
+  // 渐变与纹理缩放每次重绘都有 ±4 的浮点舍入差（实测 21.5 万像素里 16 万个不等，
+  // 但通道差和最大只有 12），哈希取样又极稀，所以逐位相等的口径在这条渲染管线下恒红，
+  // 等于这条断言根本没在判任何东西。差异阈值取 12（每通道 4，0-255 的 1.5%）：
+  // 涟漪残影、格子残留、整块重绘都是几十上百的差，一样判红。
+  const vis = await runJS(`(() => {
+    const c = document.getElementById('grid');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const a = window.__pxBase;
+    if (!a || a.length !== d.length) return { visible: -1, total: d.length / 4 };
+    let visible = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const s = Math.abs(d[i] - a[i]) + Math.abs(d[i + 1] - a[i + 1]) + Math.abs(d[i + 2] - a[i + 2]);
+      if (s > 12) visible += 1;
+    }
+    return { visible, total: d.length / 4 };
+  })()`);
+  rec('tapping the same cell twice returns the board', back.cells.every((v) => v === 0) && vis.visible === 0, { taps: back.taps, visible: vis.visible, total: vis.total, cells: back.cells.join(''), nonZero: back.cells.filter((v) => v !== 0).length });
 
   // Drag to paint a run along a row.
   const run = await runJS(`(() => {

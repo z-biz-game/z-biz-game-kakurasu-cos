@@ -288,9 +288,9 @@ K14/K16 各多红一格（那两条承诺 README 里都住着），台上写的�
 | `js/core/rng.js`（49 行） | 可复现的种子随机 |
 | `js/core/library.js`（110 行） | 战役序列的装配 |
 | `js/main.js`（720 行） | 路由 + DOM + `window.kakurasu` / `window.kaku` 两个测试钩子 |
-| `js/view.js`（609 行） | canvas 2D + 指针手势，只管像素 |
+| `js/view.js`（626 行） | canvas 2D + 指针手势，只管像素 |
 | `js/sw-register.js`（12 行） | service worker 注册 |
-| `js/audio.js`（128 行） | 音效合成与静音开关（`Sound`），静音态不新建振荡器节点 |
+| `js/audio.js`（131 行） | 音效合成与静音开关（`Sound`），静音态不新建振荡器节点 |
 | `js/settings.js`（70 行） | 偏好设置（动效、声音）的读写与落盘 |
 | `js/pwa.js`（24 行） | manifest 注册与 service worker 的接线 |
 | `js/data/lots.js`（59 行） | 40 关烘进来的题库，`tools/bake.mjs` 的产物 |
@@ -305,7 +305,7 @@ K14/K16 各多红一格（那两条承诺 README 里都住着），台上写的�
 | `test/make.test.mjs`（157 行） | 出题器的边界：会终止、每条拒绝路径都记账 |
 | `test/storage.test.mjs`（361 行） | 存档语义，加**源码级**的越层扫描 |
 | `tools/bake.mjs`（268 行） | 出题 + 复验四段（proof / ladder / 各档位 / write） |
-| `tools/playtest.mjs`（708 行） | 零依赖 CDP 驱动的浏览器断言 |
+| `tools/playtest.mjs`（752 行） | 零依赖 CDP 驱动的浏览器断言 |
 | `tools/verify.sh`（154 行） | 本地整闸：node 侧 + 浏览器侧，一条命令跑完 |
 | `tools/harness.mjs`（45 行） | 九个消费者共用的 `rows: N fail: M` 打印形状 |
 | `tools/docs-test.mjs`（435 行） | 就是本节这条腿 |

@@ -388,8 +388,11 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
     }
     if (ripples.length) {
       for (const p of ripples) p.age += s;
+      const had = ripples.length;
       ripples = ripples.filter((p) => p.age < RIPPLE_LIFE);
-      if (ripples.length) busy = true;
+      // 涟漪散尽的那一步也要重绘一次。上一帧把最后一圈涟漪画在了画布上，这一步若不画，
+      // 屏幕上就留着那圈水痕——画面再也回不到落子前那张（像素对拍能当场抓住）。
+      if (ripples.length || had) busy = true;
     }
     return busy;
   }
@@ -534,6 +537,20 @@ export function createView(canvas, { onTap, onIllegal, onPaint, onFrame } = {}) 
       };
     },
     reducedMotion() {
+      return reduceMotion;
+    },
+    // 降级态也可以从外面写进来：main.js 那边的媒体查询订阅与 window.kakurasu 的
+    // 测试钩子都走这一个入口。写的是同一个变量，所以「系统设置」与「外部写值」
+    // 不会变成两份降级态；切到降级时把已生成的涟漪清掉——降级要立刻生效。
+    setReduceMotion(v) {
+      const on = !!v;
+      if (on === reduceMotion) return reduceMotion;
+      reduceMotion = on;
+      if (on) ripples = [];
+      draw();
+      return reduceMotion;
+    },
+    isReducedMotion() {
       return reduceMotion;
     },
     measure,
