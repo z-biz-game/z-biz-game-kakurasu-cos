@@ -22,7 +22,7 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 这两行不是装饰：`js/core/grid.js:84-94` 的 `rowSum`/`colSum` 就是它逐字的实现（`s += x + 1` 与 `s += y + 1`），
 `cluesOf`（`js/core/grid.js:96`）把它摊成一条棋盘对应的线索对，`maxClue(n) = n(n+1)/2`（`js/core/grid.js:36`）给出单条线索的上限，
 超上限在 `validateLot` 里报 `clue-range`。视图只读 `statusOf` 的 `{sum, clue, ok, over, left}`（`js/core/grid.js:183-196`）来上色：
-金色未满、青绿正好等于线索、超出即红（`js/view.js:276,287` 写死 `#d8a13c / #78dcff / #e2685f`）——
+金色未满、青绿正好等于线索、超出即红（`js/view.js:286,297` 写死 `#d8a13c / #78dcff / #e2685f`）——
 权重都是正数，一行**超过**线索就回不来了，所以红色是死路而不是警告。
 
 名字的日英对照只在难度带标签上（`js/core/make.js:34-39`）：浅滩 SHOAL · 连环 LINKED · 交缠 TWINED · 迷阵 MASTER；
@@ -77,9 +77,9 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 | --- | --- | --- | --- |
 | `start` | `node server.cjs` | 是（直接起 `server.cjs`） | 打印 `数和 Kakurasu served at http://127.0.0.1:5192/  (ctrl+c to stop)`；`SIGINT` 后 `lsof` 确认端口已释放 |
 | `dev` | `node server.cjs 5192` | 与 `start` 同一条路径（只是把端口写死），未单独起 | 端口默认值 `5192` 在 `server.cjs:59` 与 `tools/verify.sh:21` 各写一次 |
-| `check` | `for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check "$f"; done && echo OK` | 是（随 `npm test`） | 打印 `OK`；同一 glob 实测展开 **29 个文件**（js 根 3 + js/core 8 + js/data 1 + server.cjs 1 + electron/main.cjs 1 + tools/*.mjs 6 + test/*.mjs 9）。这个数以前是手抄的、写着 25，差 4 个而全套绿灯——现在由 D9f 按 `package.json` 里那串 token 现场展开来对账 |
-| `unit` | `for f in test/*.test.mjs; do node "$f"; done` | 是（随 `npm test`，也逐个跑过） | 8 个文件全绿，见下表 |
-| `test` | `npm run check && npm run unit && node tools/docs-test.mjs` | **是** | `exit 0`，交回 8 行 `rows: N fail: 0`（见下一节的逐条读数）再加本仓的文档对账汇总行 |
+| `check` | `for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check "$f"; done && echo OK` | 是（随 `npm test`） | 打印 `OK`；同一 glob 实测展开 **36 个文件**（js 根 6 + js/core 8 + js/data 1 + server.cjs 1 + electron/main.cjs 1 + tools/*.mjs 6 + test/*.mjs 13）。这个数以前是手抄的、写着 25，差 4 个而全套绿灯——现在由 D9f 按 `package.json` 里那串 token 现场展开来对账 |
+| `unit` | `for f in test/*.test.mjs; do node "$f"; done` | 是（随 `npm test`，也逐个跑过） | 11 个文件全绿，见下表 |
+| `test` | `npm run check && npm run unit && node tools/docs-test.mjs` | **是** | `exit 0`，交回 11 行 `rows: N fail: 0`（见下一节的逐条读数）再加本仓的文档对账汇总行 |
 | `bake` | `node tools/bake.mjs` | **否** | 它按 `[4/4] wrote 40 lots -> js/data/lots.js` 改写题库源文件（`tools/bake.mjs:263`），文档轮不动已发货的题库，所以没跑；DESIGN 里那组 `wall=206.2s` 本轮未复现 |
 | `electron` | `electron .` | **否** | `dependencies`/`devDependencies` 都是 `{}`，仓里没有 `node_modules`，`electron` 也不在 PATH；`electron/main.cjs` 只是那份 34 行的壳 |
 | `verify` | `bash tools/verify.sh` | **是**（本轮跑到底；起 `server.cjs` + 本机 headless Chrome，9352/5192 两个端口事先空着） | 退 0，末尾 `=== ALL GREEN ===`：8 套 node 门禁 + 6 段浏览器断言 101 行 + 控制台 `(none)` + 文档对账 30 行 + 部署集 52 行 + 部署集阴性自证。逐段读数在「浏览器层」那一节 |
@@ -143,7 +143,7 @@ CI 两道 job（`.github/workflows/ci.yml`，本机未观测，只按文件定�
 `unit` 在 ubuntu-latest / node 22 上跑与 `npm run check` **同一份 glob** 的 `node --check`，再逐个跑 `test/*.test.mjs`；
 `browser` 用 `SKIP_UNIT=1 WD_TIMEOUT=240 bash tools/verify.sh`，即只跑上面那 6 段。
 
-**这台机器上没有任何一道闸读红**：`npm test` 交回 9 行 `rows:`（8 套 node 门禁 + 这条文档腿），全是 `fail: 0`，
+**这台机器上没有任何一道闸读红**：`npm test` 交回 12 行 `rows:`（11 套 node 门禁 + 这条文档腿），全是 `fail: 0`，
 两条计时闸（anchor 的 20s、make 的 1500ms/题面）都远未触及。
 
 要复跑浏览器层，命令是 `bash tools/verify.sh`（全 6 段）或 `SCENARIOS="pointer" bash tools/verify.sh`（只跑真指针那一段）。
@@ -157,8 +157,8 @@ CI 两道 job（`.github/workflows/ci.yml`，本机未观测，只按文件定�
 被指的那几行是不是真的坐着文档所说的那个名字，都由这条命令逐条读回盘上核对。它自己打印的这一轮读数：
 
 ```
-解析 114 条 · 续引 1 条 · 无法定址 0 处 · 带指认 33 条 · 跨仓引用 0 处
-文档行号对账：2 份文档 · 114 条引用 · 33 条带指认 · 30 条判据
+解析 116 条 · 续引 2 条 · 无法定址 0 处 · 带指认 36 条 · 跨仓引用 0 处
+文档行号对账：2 份文档 · 116 条引用 · 36 条带指认 · 30 条判据
 30 通过 / 0 失败
 ```
 
@@ -174,12 +174,12 @@ CI 两道 job（`.github/workflows/ci.yml`，本机未观测，只按文件定�
   一次真的漂就这样被读成绿。
 - **续引**：同一个句子里的裸「:140」借用最近那条完整引用的出处，跨句号/空行/新标题则**不借**，
   报「无法定址」而不是静默跳过。本轮实数 1 条借到、0 处借不到——借不到不等于文档有错，但一定要说话。
-- **等式**：上面那行读数不是打印出来就完事——文档里抄的「解析 114 条」「带指认 33 条」「续引 1 条」
+- **等式**：上面那行读数不是打印出来就完事——文档里抄的「解析 116 条」「带指认 36 条」「续引 2 条」
   「无法定址 0 处」「跨仓引用 0 处」与「30 条判据」全部与本轮实数**逐相等式**。只写下限抓不住
   "文档抄的是上一轮那个数"；加一条判据而不改那个数，红的是文档。
 - **接线**：这条腿必须在 `package.json` 的 `doctest`、`npm test` 的链、`tools/verify.sh`、
   `.github/workflows/ci.yml` 里各出现一次，四格分开判——只在 CI 跑的门不算门。它另外还钉住两件事：
-  目录里的 node 套件实数就是 8 个（把这条腿算成第九个套件就是文档说谎），以及「怎么跑」那一节的
+  目录里的 node 套件实数就是 11 个（把这条腿算成第十二个套件就是文档说谎），以及「怎么跑」那一节的
   标题条数、表里列的 script 名、`package.json` 的键三者必须互相对得上。
 
 ### 这一腿第一轮咬到了什么
@@ -210,7 +210,7 @@ CI 两道 job（`.github/workflows/ci.yml`，本机未观测，只按文件定�
 
 - 它核的是**位置**，不是**语义**：行号在界内、锚点整词命中，不等于那句散文真的对。上面第 3、6、7 条
   都是它抓不到或只能抓到一半的形状，靠的是把每一条引用连同落点原文打出来逐条读。
-- 文档里没有写成 `路径:行号` 的断言（"8 个文件全绿"、"40 关"、"wall=206.2s"这类）它一条也看不见；
+- 文档里没有写成 `路径:行号` 的断言（"11 个文件全绿"、"40 关"、"wall=206.2s"这类）它一条也看不见；
   那些数字住在别处：套件数由 D9d 当场数目录，script 条数由 D9e 当场数 `package.json`，
   题库那 40 行由 `node test/lots.test.mjs` 逐行重烤重验。
 - 跨仓引用（`../别的仓/文件:行号`）只按形状分类并计数，不参与本仓的越界检查——单仓 checkout 里
@@ -236,7 +236,7 @@ CI 两道 job（`.github/workflows/ci.yml`，本机未观测，只按文件定�
 | K2 | 把 `js/core/count.js` 写成 `js/core/counnt.js` | 边界（文件不存在） | 红 1 格 |
 | K3 | `tools/verify.sh:21` 改指 verify.sh 现量到的第一个内部空行 | 边界（在界内但整段空白） | 红 1 格 |
 | K4 | H1 行尾追加一条前面没有完整引用的裸续引 | 只让「无法定址」动（越界与解析条数都不理它） | 红 1 格 |
-| K4b | 读数那行的「解析 114 条」抄成 100 条 | 只让那一条等式动（闸没数错，是文档说谎） | 红 1 格 |
+| K4b | 读数那行的「解析 116 条」抄成 100 条 | 只让那一条等式动（闸没数错，是文档说谎） | 红 1 格 |
 | K5 | 把 `minimalCore()` 那个注解换成中文词 | 「N 条带指认」（锚点那半转为空转；D3 转绿是预期） | 红 1 格 |
 | K6 | `anchorHit` 退回子串匹配 | D7 假引用九把 + D7b 前缀靶子那把哨 | 红 2 格 |
 | K7 | 从副本里摘走 `DESIGN.md` | D1 输入集 / D2 边界（README 引的 `DESIGN.md:4`、`DESIGN.md:13` 落在不存在的文件上）+ 两条等式 | 红 4 格 |
@@ -249,7 +249,7 @@ CI 两道 job（`.github/workflows/ci.yml`，本机未观测，只按文件定�
 | K14 | 把 README 换成一句没有引用的话 | D2b + 五条等式 + D9e + D9f + D10（「文档行号对账 30 条」和 glob 那句都住在 README 里）；D1/D2/D3 照旧绿 | 红 9 格 |
 | K15 | `css/game.css` 的行数从 161 改成 100 | 边界（`路径`（N 行）是等式，不是修辞） | 红 1 格 |
 | K16 | 把 `README.md` 整个从副本里摘走（比 K14 更狠：文件不在了） | 这条腿**不许崩**：实测红 9 格且每一条都点名（D1 输入集 + 五条等式 + D9e + D9f + D10），没有一条 stack trace | 红 9 格 |
-| K17 | README 印的「`npm run check` glob 实测展开 **29 个文件**」改成 30 | D9f（这一格现场按 `package.json` 的 token 展开再和文档对账——补的就是"文档写 25、实数 29、全套照样绿"那个洞） | 红 1 格 |
+| K17 | README 印的「`npm run check` glob 实测展开 **36 个文件**」改成 37 | D9f（这一格现场按 `package.json` 的 token 展开再和文档对账——补的就是"文档写 25、实数 29、全套照样绿"那个洞） | 红 1 格 |
 
 K7 那一行值得单说：它**不**红覆盖面下限（D2a）——摘走 DESIGN.md 之后 README 自己那一份还剩 62 条引用
 （本轮实测；两份都在时是 114 条），早就过了 45 的下限，所以"少一份文档"这件事不是那条下限抓的，
@@ -270,7 +270,7 @@ K16 是给这条腿自己补的一格。第一版在这里是**崩**的：`tools
 K14/K16 各多红一格（那两条承诺 README 里都住着），台上写的还是"红 8 格"，直到台架自己加了
 「共红 N 格（要 M）」这一式才把 9 报出来。现在每把刀都同时断言"该红的都在"和"总数就是那么多"。
 
-同一轮里 K17 第一次下刀就**失败**而不是打红：它的 needle 是「glob 实测展开 **29 个文件**」，而这句话在下面
+同一轮里 K17 第一次下刀就**失败**而不是打红：它的 needle 是「glob 实测展开 **36 个文件**」，而这句话在下面
 这张台账里被引用了一次，`edit()` 要求命中恰好 1 次，于是报的是"needle 命中 2 次"。这台架的下刀断言
 （命中数、行数不变）就是为这两种情形准备的——它宁可拒绝下刀，也不在别的地方悄悄改一处。
 
@@ -284,45 +284,49 @@ K14/K16 各多红一格（那两条承诺 README 里都住着），台上写的�
 | `js/core/logic.js`（266 行） | 确定性求解器，`analyse` 那四个数（depth / chains / backtracks / nodes）由它产出 |
 | `js/core/make.js`（187 行） | 出题器：掷棋盘 → 读线索 → 两条计数器各数一遍 → `analyse` → 卡难度带 |
 | `js/core/game.js`（109 行） | 点击 / 撤销 / 进度的状态机；它不画像素，像素也不算合法性 |
-| `js/core/storage.js`（200 行） | 唯一允许碰 `localStorage` 的模块，守卫是"抛异常"而不是"返回 null" |
+| `js/core/storage.js`（261 行） | 唯一允许碰 `localStorage` 的模块，守卫是"抛异常"而不是"返回 null" |
 | `js/core/rng.js`（49 行） | 可复现的种子随机 |
 | `js/core/library.js`（110 行） | 战役序列的装配 |
-| `js/main.js`（620 行） | 路由 + DOM + `window.kakurasu` / `window.kaku` 两个测试钩子 |
-| `js/view.js`（407 行） | canvas 2D + 指针手势，只管像素 |
+| `js/main.js`（720 行） | 路由 + DOM + `window.kakurasu` / `window.kaku` 两个测试钩子 |
+| `js/view.js`（609 行） | canvas 2D + 指针手势，只管像素 |
 | `js/sw-register.js`（12 行） | service worker 注册 |
+| `js/audio.js`（128 行） | 音效合成与静音开关（`Sound`），静音态不新建振荡器节点 |
+| `js/settings.js`（70 行） | 偏好设置（动效、声音）的读写与落盘 |
+| `js/pwa.js`（24 行） | manifest 注册与 service worker 的接线 |
 | `js/data/lots.js`（59 行） | 40 关烘进来的题库，`tools/bake.mjs` 的产物 |
 | `test/anchorlib.mjs`（138 行） | 全仓唯一允许做 `2^(r*c)` 穷举的地方 |
 | `test/anchor.test.mjs`（142 行） | 证明层：4×4 全空间枚举 + 三方一致 |
+| `test/assets.test.mjs`（291 行） | 13 张资产逐张量尺寸/色彩/安全区，并用 `assets/gen/gen_art.py` 重跑比 SHA-256 |
 | `test/count.test.mjs`（209 行） | 计数器语义，含"权重定义换掉就数出另一个棋盘"那条反证 |
 | `test/game.test.mjs`（192 行） | 状态机与 `par`：对 2^16 点击图真跑 BFS |
 | `test/grid.test.mjs`（270 行） | 校验器的每条错误码都被负例打过一次 |
 | `test/logic.test.mjs`（189 行） | 求解器的可复现性（两次调用逐字节相等） |
 | `test/lots.test.mjs`（170 行） | 题库逐行重烤重验（印在产物上的数字改不对） |
 | `test/make.test.mjs`（157 行） | 出题器的边界：会终止、每条拒绝路径都记账 |
-| `test/storage.test.mjs`（281 行） | 存档语义，加**源码级**的越层扫描 |
+| `test/storage.test.mjs`（361 行） | 存档语义，加**源码级**的越层扫描 |
 | `tools/bake.mjs`（268 行） | 出题 + 复验四段（proof / ladder / 各档位 / write） |
-| `tools/playtest.mjs`（679 行） | 零依赖 CDP 驱动的浏览器断言 |
+| `tools/playtest.mjs`（708 行） | 零依赖 CDP 驱动的浏览器断言 |
 | `tools/verify.sh`（154 行） | 本地整闸：node 侧 + 浏览器侧，一条命令跑完 |
-| `tools/harness.mjs`（34 行） | 九个消费者共用的 `rows: N fail: M` 打印形状 |
-| `tools/docs-test.mjs`（431 行） | 就是本节这条腿 |
+| `tools/harness.mjs`（45 行） | 九个消费者共用的 `rows: N fail: M` 打印形状 |
+| `tools/docs-test.mjs`（435 行） | 就是本节这条腿 |
 | `tools/deploy-set.mjs`（347 行） | 部署集闸：检查即将上传的那份产物 |
 | `tools/deploy-set-selftest.mjs`（316 行） | 上面那道闸的阴性自证（每一类断言当场打红一次） |
 | `tools/assemble-site.sh`（31 行） | 部署产物的唯一清单，`.github/workflows/pages.yml` 与本地闸调同一支 |
-| `css/game.css`（161 行） | 唯一的样式文件，提示行 34px 的高度是预留出来的 |
-| `electron/main.cjs`（34 行） | 那份壳：仓里没有 `node_modules`，`electron` 不在 PATH |
+| `css/game.css`（208 行） | 唯一的样式文件，提示行 34px 的高度是预留出来的 |
+| `electron/main.cjs`（40 行） | 那份壳：仓里没有 `node_modules`，`electron` 不在 PATH |
 | `.github/workflows/ci.yml`（59 行） | CI：`npm run check` → `npm run unit` → 本闸 |
 | `.github/workflows/pages.yml`（43 行） | Pages 发布，调 `tools/assemble-site.sh` |
-| `index.html`（75 行） | 单页外壳，favicon 是内联 SVG data-URI（否则 404 进控制台） |
-| `server.cjs`（69 行） | 零依赖静态服务器，端口默认值在这里 |
+| `index.html`（114 行） | 单页外壳，favicon 是内联 SVG data-URI（否则 404 进控制台） |
+| `server.cjs`（70 行） | 零依赖静态服务器，端口默认值在这里 |
 | `package.json`（48 行） | 上面「怎么跑」那一节逐条核对的那 11 条 script |
-| `DESIGN.md`（233 行） | 为什么这样实现，以及哪条约束一破就出 bug |
-| `sw.js`（56 行） | service worker 本体 |
+| `DESIGN.md`（235 行） | 为什么这样实现，以及哪条约束一破就出 bug |
+| `sw.js`（71 行） | service worker 本体 |
 
 `LICENSE`（MIT，"Copyright (c) 2026 z-biz-game"）、`manifest.webmanifest`、`.gitignore` 这三条**不在**上面那张
 表里，也不在那条等式里——这条腿认的扩展名表里没有它们，所以这里不写行数，要核只能 `ls`。
 `icons/` 是仓里唯一的二进制（6 个 PNG），行数无从可核。
 
-`test/` 里 9 个 `.mjs`：8 个 `*.test.mjs`（`DESIGN.md:13` 那句"8 个 node 测试文件"与实数一致）加
+`test/` 里 13 个 `.mjs`：11 个 `*.test.mjs`（`DESIGN.md:13` 那句"11 个 node 测试文件"与实数一致）加
 `anchorlib.mjs`——它是全仓唯一允许做 `2^(r*c)` 穷举的地方，自带 `MAX_ENUM_CELLS = 20` 闸门（`test/anchorlib.mjs:14`），
 `js/*`、页面加载路径、`playtest.mjs` 都不引用它；以及 `fakeworld.mjs`（101 行，把"补一份能跑的 window/DOM/canvas 壳"这件事抽出来，
 由 `test/browser.test.mjs` 与 `test/frame.test.mjs` 共用，帧率对拍与普通行为断言因此跑在同一个假世界上）。
@@ -423,7 +427,7 @@ master  rank 4-409  marks 19-30  depthMax 4  backtracksMax 6  nodesMax 11  coreS
 * `标记` 划叉的格子不计入任何和，只是给自己留记号：格值三态是 `js/core/game.js:18-20` 的 `OPEN = 0 / ON = 1 / NOTE = 2`
   （前两个复用 `js/core/grid.js:16-17` 的 `EMPTY`/`MARKED`），`tap` 的三态轮转写在 `js/core/game.js:49`，提示与传播会尊重被划掉的格
   （`test/logic.test.mjs` 有专门一条）。
-* 键盘（`js/main.js:518-542` 的 `keydown`）：`escape` 收起最上层卡 · `?`/`h` 玩法说明 · `space`/`enter` 继续或再来一次 ·
+* 键盘（`js/main.js:542-565` 的 `keydown`）：`escape` 收起最上层卡 · `?`/`h` 玩法说明 · `space`/`enter` 继续或再来一次 ·
   `p` 暂停 · `r` 重开 · `u` 撤销 · `n` 标记 · `g` 提示 · `m` 静音 · `f` 全屏；带 meta/ctrl/alt 的组合键一律放过，
   焦点在按钮上时 `space`/`enter` 交回给按钮。撤销也记一次点击，
   因为"一次到位"是关于点击数的陈述（`@pointer`/`@play` 都有断言钉它）。
@@ -441,7 +445,7 @@ master  rank 4-409  marks 19-30  depthMax 4  backtracksMax 6  nodesMax 11  coreS
   （本轮按当前产物现算：`2026-09-27` → `master-02`、`09-28` → `shoal-09`、`09-29` → `twined-06`；换一天就换一个，这条只有函数意义）。
   `#/random` 才会现场跑生成器，被 `MAX_ATTEMPTS` 与计数器上限夹住。
 * 存档只有一个 localStorage 键 `kakurasu.save.v1`（`js/core/storage.js:17`），清空要点两次。
-  页面钩子是 `window.kakurasu`（`js/main.js:672`），同时挂了别名 `window.kaku`（`js/main.js:674`），`version === 1`（`js/main.js:558`）。
+  页面钩子是 `window.kakurasu`（`js/main.js:696`），同时挂了别名 `window.kaku`（`js/main.js:698`），`version === 1`（`js/main.js:582`）。
 
 ---
 

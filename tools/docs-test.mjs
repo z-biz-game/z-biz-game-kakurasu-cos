@@ -372,10 +372,14 @@ ok('D9c CI 的那一步跑的也是这一条命令（与本地同一条，不是
   ci.split('\n').filter((l) => l.trim().startsWith('run:') && l.includes(CMD)).slice(0, 2).join(' / '));
 const unitScript = pkg.scripts.unit || '';
 const nodeSuites = fs.readdirSync(path.join(ROOT, 'test')).filter((f) => f.endsWith('.test.mjs')).length;
+// 这一格钉的是"目录里的套件数"这个实数。并线把两侧的套件合并到一处，目录里现在是 11 个
+// *.test.mjs（anchor/assets/browser/count/frame/game/grid/logic/lots/make/storage）；
+// 期望值随之更新，断言强度不变——仍然是"文档印的那个数必须等于目录里的实数"。
+const EXPECT_SUITES = 11;
 ok('D9d 这条闸进 `npm test` 的链，但**不进** `npm run unit` 与 `node --test` 的那个 test/*.test.mjs 展开——' +
-  'README「怎么跑」一节印的是「8 个文件全绿」，而 verify.sh 与 unit 那条循环数的都是目录里那 8 个文件；' +
-  '把它算成第九个套件就是文档说谎（这一格现在当场数目录里的套件数并等于 8）',
-  chain.includes(CMD) && !unitScript.includes('docs-test') && nodeSuites === 8,
+  `README「怎么跑」一节印的是「${EXPECT_SUITES} 个文件全绿」，而 verify.sh 与 unit 那条循环数的都是目录里那 ${EXPECT_SUITES} 个文件；` +
+  `把它算成第${EXPECT_SUITES + 1}个套件就是文档说谎（这一格现在当场数目录里的套件数并等于 ${EXPECT_SUITES}）`,
+  chain.includes(CMD) && !unitScript.includes('docs-test') && nodeSuites === EXPECT_SUITES,
   `链含本闸=${chain.includes(CMD)} · unit=${unitScript} · test/*.test.mjs 实数 ${nodeSuites}`);
 
 // 本仓特有的一格：README 那句「`package.json` 的 N 条 scripts 逐条核对」与它下面那张表，写的时候

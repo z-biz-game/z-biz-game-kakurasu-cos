@@ -27,8 +27,8 @@ core 里出现 `requestAnimationFrame`/`addEventListener` 就是越层。
 视图通过 `progress()`（`js/core/game.js:77`）读回来上色。
 
 `storage.js` 是唯一的例外，而且它的守卫是**会抛异常**而不是返回 null：
-`rawBackend()`（`js/core/storage.js:36`）在没有 window、或浏览器在**读属性**时就抛（Safari 隐私模式、部分 webview 的
-file://）的场合抛 `Error`；调用方 `current()`（`js/core/storage.js:45`）把抛包成"这次没有持久层"。返回 null 之所以不行：
+`rawBackend()`（`js/core/storage.js:138`）在没有 window、或浏览器在**读属性**时就抛（Safari 隐私模式、部分 webview 的
+file://）的场合抛 `Error`；调用方 `current()`（`js/core/storage.js:147`）把抛包成"这次没有持久层"。返回 null 之所以不行：
 null 和"存储答话说这里没有存档"是同一种形状，而后者是合法地开新局 —— 把前者误判成后者，
 用户会发现自己的成绩被静默清空。两条路径在 `test/storage.test.mjs` 都有断言（抛：`test/storage.test.mjs:48-52`；Safari 那种读属性就抛：`test/storage.test.mjs:201`）。
 
@@ -152,7 +152,7 @@ twined 3-3 (depth 0) · master 4-409 (depth 0-4)`。
   `withCore:false`（线索极小化只在 bake 跑）。实测：4×4~6×6 亚毫秒，7×7 约 7-12 ms/题面，
   加带子过滤后仍是个位数次尝试。`test/make.test.mjs:140` 有一条 1500ms/题面的宽松上限，
   它防的是"有人不小心把穷举放到了点击路径上"，不是性能指标。
-* `recheck()`（`js/main.js:471`，挂在 `window.kakurasu` 上）：页面内对当前关重跑两条 `limit=2` 计数 + `analyse`，
+* `recheck()`（`js/main.js:679`，挂在 `window.kakurasu` 上）：页面内对当前关重跑两条 `limit=2` 计数 + `analyse`，
   浏览器断言用它证明"屏幕上的 1 是浏览器自己算出来的"。
 
 ### 3.2 `par` / 最少点击数
@@ -189,7 +189,7 @@ maxDpStates=39144  maxSolverNodes=11  maxCoreNodes=8527  wall=206.2s（40 关，
 
 ## 6. 视图与手势（像素层的坑）
 
-* **devicePixelRatio**：`canvas.width = round(cssW * dpr)` 之后 `setTransform(dpr,0,0,dpr,0,0)`（`js/view.js:59`）。
+* **devicePixelRatio**：`canvas.width = round(cssW * dpr)` 之后 `setTransform(dpr,0,0,dpr,0,0)`（`js/view.js:117`）。
   少了这一步，Retina 上线条糊、命中测试偏一半。`@boot` 有一条断言把 backing store 与 CSS 盒
   对账（`|w - boxW*dpr| ≤ dpr+1`），并拒绝未样式化的 300×150 默认盒。
 * **`getContext('2d', {willReadFrequently:true})`**（`js/view.js:37`）：台架要 `getImageData` 读回位图指纹
@@ -203,7 +203,7 @@ maxDpStates=39144  maxSolverNodes=11  maxCoreNodes=8527  wall=206.2s（40 关，
   套用同一决定，每格各自记一次点击；`pointerup` 结束。台架 `@pointer` 用
   `Input.dispatchMouseEvent` 真实走一遍：整条认证解用点击走完、原地双点回到原画面、
   线索槽里按下不计、涂装一笔连出三个格子。
-* `posAtLocal()`（`js/view.js:96-101`）返回 -1（gutter / 边距）即"不是格子"，既不计数也不报错 —— 与 `tap()`（`js/core/game.js:45`）的越界
+* `posAtLocal()`（`js/view.js:154-161`）返回 -1（gutter / 边距）即"不是格子"，既不计数也不报错 —— 与 `tap()`（`js/core/game.js:45`）的越界
   拒绝一起构成"非法位置点不动"。
 
 ## 7. 台架（CDP）的坑，都是这农场里踩过换回来的
