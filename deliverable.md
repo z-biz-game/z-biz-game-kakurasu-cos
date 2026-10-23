@@ -35,7 +35,7 @@ service worker 的版本名与本仓闸对不上、图标被换成另一套、�
 ## 3. 图标归属
 
 并线把 theirs 的中央分发图标（RGB 母题 waves）换掉了本仓 13 张自产资产
-（`assets/gen/gen_art.py` 现烤，8 位 RGBA，逐张 SHA-256 可复现，maskable 安全区），
+（`assets/gen/gen_art.py` 现烤，8 位 RGBA，逐张与本机 Pillow 重跑比 SHA-256 —— 这一层随 Pillow 版本漂，见 README 资产那行的红行分类；maskable 安全区），
 而 README/DESIGN 与 `test/assets.test.mjs` 钉的是本仓契约。
 按仓的文档契约与资产闸恢复本仓图标与 manifest；
 `og:image` / `twitter:image` 改成 README 声明前缀下的绝对 URL（部署集 R7 要求）。

@@ -269,8 +269,10 @@ await atest('生成器可复现：同一 seed 重跑一次，13 张资产的 SHA
   ok(/IHDR|struct\.unpack\(">II"/.test(genSrc), 'gen_art.py 不自己解 IHDR：写完不自证宽高');
   ok(/def check_safe_zone/.test(genSrc), 'gen_art.py 里的 maskable 安全区自证没了：换形状遮罩切掉母题将无人报警');
   let pillowed = true;
+  let pillowVer = '未取到';
   try {
     execFileSync('python3', ['-c', 'import PIL'], { stdio: 'ignore' });
+    pillowVer = execFileSync('python3', ['-c', 'import PIL;print(PIL.__version__)'], { encoding: 'utf8' }).trim();
   } catch (err) {
     pillowed = false;
   }
@@ -284,7 +286,21 @@ await atest('生成器可复现：同一 seed 重跑一次，13 张资产的 SHA
   const regen = ASSETS.map((rel) => [rel, sha(readFileSync(join(out, rel)))]);
   eq(regen.length, ASSETS.length, '重跑产出的文件数不对');
   const drift = regen.filter(([rel, h]) => h !== sha(read(rel)));
-  eq(drift.map(([rel]) => rel), [], `盘上的图与 gen_art.py 默认 seed 的产物不一致（被手改过？）：${drift.map(([rel]) => rel).join(', ')}`);
+  // 字节不同有两类，代价完全不同：一类是编码漂移（同一批像素、Pillow 版本换了 chunk/压缩写法），
+  // 一类是内容漂移（盘上这张图真的不是这台机器的生成器画出来的）。红之前先分清是哪一类，
+  // 否则这条腿会把环境的版本差指控成"有人手改过图"。判据本身不动：字节必须逐张相同。
+  let pix = '';
+  if (drift.length) {
+    try {
+      pix = execFileSync('python3', [join(root, 'assets', 'gen', 'pixelcmp.py'), out, ASSETS.join(',')],
+        { encoding: 'utf8' }).trim();
+    } catch (err) {
+      pix = '像素比对没跑成：' + String(err.message || err).slice(0, 60);
+    }
+  }
+  eq(drift.map(([rel]) => rel), [],
+    `盘上的图与 gen_art.py 默认 seed 的产物字节不一致（${drift.length} 张）：${drift.map(([rel]) => rel).join(', ')}`
+    + ` —— 逐张分「编码漂移（像素相同）」/「内容漂移（像素不同）」${pix}；本机 Pillow=${pillowVer}`);
   console.log(`  [可复现] python3 assets/gen/gen_art.py 重跑 ${ASSETS.length} 张，SHA-256 逐张相同`);
 });
 
