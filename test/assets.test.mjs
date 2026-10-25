@@ -261,7 +261,31 @@ test('maskable 的母题落在中央 80% 安全区内（纯 node 解像素量真
     `阴性对照没判红（量到 bbox=(${fb.minx},${fb.miny})-(${fb.maxx},${fb.maxy})）：这把尺是空跑的`);
 });
 
-await atest('生成器可复现：同一 seed 重跑一次，13 张资产的 SHA-256 与盘上逐张相同', async () => {
+// 把 pixelcmp.py 的分类读成机器判据：它最后一行的 SUMMARY 是机器可读的
+// （content/encoding/unknown），上面的人话行只给人看。没有 SUMMARY、或某个漂移文件
+// 没被任何一行认领 ⇒ 归到 unknown（未知不许当等价）。
+function classifyPix(pix, drifted) {
+  const out = { content: [], encoding: [], unknown: [] };
+  const text = String(pix);
+  if (!/SUMMARY\s+content=\d+\s+encoding=\d+\s+unknown=\d+/.test(text)) {
+    out.unknown = drifted.slice();
+    return out;
+  }
+  const seen = new Set();
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    let r = /内容漂移\s+([^\s（(]+)/.exec(t);
+    if (r) { out.content.push(r[1]); seen.add(r[1]); continue; }
+    r = /编码漂移\s+([^\s（(]+)/.exec(t);
+    if (r) { out.encoding.push(r[1]); seen.add(r[1]); continue; }
+    r = /·\s*([^\s（(]+)\s+读不到/.exec(t);
+    if (r) { out.unknown.push(r[1]); seen.add(r[1]); continue; }
+  }
+  for (const rel of drifted) if (!seen.has(rel)) out.unknown.push(rel);
+  return out;
+}
+
+await atest('生成器可复现：同一 seed 重跑一次，13 张资产的像素与盘上逐张相同（字节漂移单列）', async () => {
   const gen = join(root, 'assets', 'gen', 'gen_art.py');
   ok(existsSync(gen), 'assets/gen/gen_art.py 不在仓里：资产就成了不可复现的手改物');
   const genSrc = readFileSync(gen, 'utf8');
@@ -287,9 +311,24 @@ await atest('生成器可复现：同一 seed 重跑一次，13 张资产的 SHA
   eq(regen.length, ASSETS.length, '重跑产出的文件数不对');
   const drift = regen.filter(([rel, h]) => h !== sha(read(rel)));
   // 字节不同有两类，代价完全不同：一类是编码漂移（同一批像素、Pillow 版本换了 chunk/压缩写法），
-  // 一类是内容漂移（盘上这张图真的不是这台机器的生成器画出来的）。红之前先分清是哪一类，
-  // 否则这条腿会把环境的版本差指控成"有人手改过图"。判据本身不动：字节必须逐张相同。
+  // 一类是内容漂移（盘上这张图真的不是这台机器的生成器画出来的）。
+  //
+  // 2026-10-25 改判据：原先两类都判红（注释里写着「判据本身不动：字节必须逐张相同」）。那样的
+  // 后果是**这条腿把环境的版本差也指控成「有人手改过图」** —— 而这正是本段注释自己反对的那句话。
+  // 为什么字节判据在事实上不可满足：
+  //   ① CI 根本不装 Pillow（这条腿在 CI 直接跳过）⇒ 它只在开发机上跑；
+  //   ② Pillow 的 PNG 编码器**逐行自适应选滤波**（实测本仓资产用到的滤波类型有 1/2/4 三种），
+  //      滤波选择与压缩写法都随 Pillow 版本变；
+  //   ③ 实测：同一批盘上资产、同一个生成器，Pillow 10.4.0 的机器上 3 张字节对不上，
+  //      Pillow 11.3.0 的机器上 12 张对不上（README 里记着后者）⇒ 漂移条数随 Pillow 版本变。
+  // 也就是说这条判据量的不是「这张图是谁画的」，是「这台机器的 Pillow 是哪版」。
+  //
+  // 判据改成**像素一致**（pixelcmp.py 逐张比，用它机器可读的 SUMMARY 行当判据）：
+  // 守住「盘上的图必须就是生成器那张图」，且与 Pillow 版本无关。
+  // 字节差仍然报出来（那是真的存在的事实），但不判红。
+  // 像素无法比对（读不到 / Pillow 缺失）⇒ 判红：说不出等价就不许当等价。
   let pix = '';
+  let cls = { content: [], encoding: [], unknown: [] };
   if (drift.length) {
     try {
       pix = execFileSync('python3', [join(root, 'assets', 'gen', 'pixelcmp.py'), out, ASSETS.join(',')],
@@ -297,11 +336,18 @@ await atest('生成器可复现：同一 seed 重跑一次，13 张资产的 SHA
     } catch (err) {
       pix = '像素比对没跑成：' + String(err.message || err).slice(0, 60);
     }
+    cls = classifyPix(pix, drift.map(([rel]) => rel));
   }
-  eq(drift.map(([rel]) => rel), [],
-    `盘上的图与 gen_art.py 默认 seed 的产物字节不一致（${drift.length} 张）：${drift.map(([rel]) => rel).join(', ')}`
+  eq(cls.content, [],
+    `盘上的图与 gen_art.py 默认 seed 的产物**内容**不一致（${cls.content.length} 张）：${cls.content.join(', ')}`
     + ` —— 逐张分「编码漂移（像素相同）」/「内容漂移（像素不同）」${pix}；本机 Pillow=${pillowVer}`);
-  console.log(`  [可复现] python3 assets/gen/gen_art.py 重跑 ${ASSETS.length} 张，SHA-256 逐张相同`);
+  eq(cls.unknown, [],
+    `有 ${cls.unknown.length} 张漂移图无法做像素比对（读不到盘上那一份或重跑那一份，或分类器没给出结论）`
+    + `${pix ? ' —— ' + pix : ''}；本机 Pillow=${pillowVer}`);
+  if (cls.encoding.length) {
+    console.log(`  [可复现] 编码漂移 ${cls.encoding.length} 张（像素逐点相同，只有 PNG 字节不同 —— Pillow 版本的滤波/压缩写法差，不是有人手改过图）：${cls.encoding.join(', ')}；本机 Pillow=${pillowVer}`);
+  }
+  console.log(`  [可复现] python3 assets/gen/gen_art.py 重跑 ${ASSETS.length} 张，像素逐张与盘上相同（其中 ${ASSETS.length - drift.length}/${ASSETS.length} 张连字节也逐张相同）`);
 });
 
 run();

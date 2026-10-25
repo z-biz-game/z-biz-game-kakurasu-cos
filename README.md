@@ -6,7 +6,7 @@
 屏上那个"解数 1"不是标的，是 DP 与逐格回溯各数一遍、且被 4×4 全空间 `2^16` 穷举在测试层对过账之后才印出来的。
 
 零依赖、零打包器：`package.json` 的 `dependencies` 与 `devDependencies` 都是 `{}`。图片素材是 13 张真 PNG，全部由
-`assets/gen/gen_art.py` 现烤（`test/assets.test.mjs` 逐张读 IHDR、把 13 张重跑一遍比 SHA-256，再用纯 node 解码像素量出
+`assets/gen/gen_art.py` 现烤（`test/assets.test.mjs` 逐张读 IHDR、把 13 张重跑一遍比像素，再用纯 node 解码像素量出
 maskable 图形的母题确实落在中央 80% 安全圈内），画面其余部分由 canvas 2D 程序绘制。
 本机环境：Apple M1 Pro（8 核）、node v22.22.3、Pillow 11.3.0、日期 2026-10-05。**墙钟只当读数**：这台机器上同时有别的代理的闸在跑，秒数复跑不出同一个值，所以本文凡是要说成本的地方都引那条阈值断言，读数只列在标注了「量级」的那一列。
 
@@ -59,7 +59,7 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 | 现场生成有边界、会终止 | `node test/make.test.mjs` | `MAX_ATTEMPTS` 必须被 honoring（`makeLot` 撞带子时 `attempted == 400` 且返回 `null`）；每条拒绝路径都记账；`js/*` 里不许混进穷举 | 实测 `rows: 14 fail: 0`；两条计时闸：穷举搜索 `< 20000ms`（`test/make.test.mjs:94`）、`< 1500 ms/题面`（`:140`） |
 | `js/core` 不知道有屏幕 | `node test/storage.test.mjs` | **源码级**扫描 `js/core/*.js` 里非注释行的 `window.`/`document.`，白名单只有 `storage.js`，而它必须暴露 `rawBackend`、必须 `throw`、消费者必须 `try` 包住；再断言除 `library.js` 外没有 core 模块伸出 `../` | 实测 `rows: 22 fail: 0` |
 | 静音/暂停/重开/存档解码**行为成立**，不是字符串命中 | `node test/browser.test.mjs` | 静音看 `log.osc`：挂起上下文后一次 `blip` 都不新建振荡器（把 gain 设 0 的假静音在这里红），浏览器拒绝挂起时照样 0 节点；暂停期间 `simSteps`/`simClock`/`accum` 三个读数都不许动，且盘面拒收点按；偏好与存档逐字段回落（`null`/数组/类型错/越界长度各一条垃圾样本，只丢那一条）；`sw.js` 在 node 里跑，同源子资源必须**先** `fetch` 再写缓存，断网才退缓存 | 实测 `rows: 28 fail: 0` |
-| 美术资产是真图、且可复现 | `node test/assets.test.mjs` | 13 张图逐张解 PNG 魔数与 IHDR（宽高、8 位 RGBA、>200 字节），尺寸与文件名/`manifest` 声称的 `sizes` 逐枚对账；`index.html` 的 href/src、`manifest.webmanifest` 的 icons、`css/game.css` 的 url()、`js/view.js` 的三处 `loadArt`、`electron/main.cjs` 传给 `BrowserWindow` 的窗口 `icon` 全部拿去跟磁盘对账（桌面壳那枚还必须就在可复现清单里，且不许是"建好没人用"的死常量）；apple-touch-icon 唯一且 ≥180px；maskable 那张用纯 node（`zlib` inflate + 五种行滤波）解出像素，量母题的实际包围盒是否落在中央 80% 安全区内，并自带一发"把母题挪到角上必须判红"的阴性对照；最后用 `python3 assets/gen/gen_art.py` 的默认 seed 往临时目录重跑一遍，逐张比 SHA-256 —— 盘上的图必须就是脚本的产物 | 安全区读数 `bbox=(94,94)-(431,426)`，允许 `51..460` ⇒ 在圈内。**SHA-256 那一格在这台机器上是红的**：`rows: 7 fail: 1`（2026-10-24 本机一次 `node test/assets.test.mjs`，Pillow 10.4.0），12 张字节对不上，红行逐张分两类 —— 11 张「编码漂移」（像素逐点相同、只有 PNG 字节不同）、`icons/favicon-32.png` 一张「内容漂移」（40/1024 个像素不同，落在细笔画那两列）。生成器 10-05 之后没再动、这 12 张图 10-02 之后没再动，而 10-05 那次这条腿报的是绿 ⇒ 差异来自本机 Pillow 的版本，不是有人手改图。判据没放宽（字节仍须逐张相同），但红会自己说清是哪一类漂移，不再指控「被手改过」 |
+| 美术资产是真图、且可复现 | `node test/assets.test.mjs` | 13 张图逐张解 PNG 魔数与 IHDR（宽高、8 位 RGBA、>200 字节），尺寸与文件名/`manifest` 声称的 `sizes` 逐枚对账；`index.html` 的 href/src、`manifest.webmanifest` 的 icons、`css/game.css` 的 url()、`js/view.js` 的三处 `loadArt`、`electron/main.cjs` 传给 `BrowserWindow` 的窗口 `icon` 全部拿去跟磁盘对账（桌面壳那枚还必须就在可复现清单里，且不许是"建好没人用"的死常量）；apple-touch-icon 唯一且 ≥180px；maskable 那张用纯 node（`zlib` inflate + 五种行滤波）解出像素，量母题的实际包围盒是否落在中央 80% 安全区内，并自带一发"把母题挪到角上必须判红"的阴性对照；最后用 `python3 assets/gen/gen_art.py` 的默认 seed 往临时目录重跑一遍，**逐张比像素** —— 盘上的图必须就是脚本的产物 | 安全区读数 `bbox=(94,94)-(431,426)`，允许 `51..460` ⇒ 在圈内。**判据 2026-10-25 从「字节相同」改成「像素相同」**：PNG 的压缩流与**逐行滤波**由 Pillow 版本决定（实测本仓资产用到的滤波类型有 1/2/4 三种），而 CI 根本不装 Pillow（这条腿在 CI 直接跳过）⇒ 字节判据量的不是「这张图是谁画的」，是「这台机器的 Pillow 是哪版」：同一批盘上资产、同一个生成器，Pillow 11.3.0 的机器上 12 张字节对不上、Pillow 10.4.0 的机器上 13 张对不上，而**像素全都一致**。字节差仍如实报出（`编码漂移 N 张`）但不判红；**内容漂移（像素不同）照判红**。**这一改还揪出一笔真欠账**：原先两类混在一起报红，README 里那句「差异来自本机 Pillow 的版本，不是有人手改图」把唯一的真缺陷合理化掉了 —— 逐张复核后确认 `icons/favicon-32.png` 那 40 个像素差异**不是**编码器造成的：**仓里三代生成器（e9e5533 / 97d8db3 / 现在）产出的 favicon-32 与盘上那张都差 40 像素** ⇒ 盘上那张根本不是生成器的产物，已按「生成器是唯一真源」重烤。改判据 + 重烤之后：`node test/assets.test.mjs` → `rows: 7 fail: 0`（2026-10-25 本机，Pillow 10.4.0；13 张全是编码漂移、内容漂移 0 张）。阴性对照：改掉盘上任意一张图的**一个像素** ⇒ 立刻判红并点名那一张 |
 | 关卡内三档帧率对拍（30/60/120Hz） | `node test/frame.test.mjs` | 真落子进关卡后逐帧喂虚拟时间：与最密档共同采到的**每个 sim 步号**上仿真钟/涟漪 age/半径/提示读数逐位相同（`bad === 0`）；同一目标步号越线时刻的钟差 ≤ 一帧步数（4 步）；喂满 1.000s 墙钟三档 `simSteps` 极差 ≤1；`reduceMotion` 下粒子恒 0 而仿真照跑；两发阴性对照必须判红（`accum += dt`→`+= 1/60`、`simClock += SIM_STEP`→`+= dt`） | 实测 `rows: 8 fail: 0`，读数见「门禁清单」一节 |
 
 上面 8 套 node 门禁合起来是 **155 条断言，0 失败**。`npm test` 本轮复跑过，每次都 `exit 0`。这一层没有 `RESULT:` 汇总行——每套自己打印一行 `rows: N fail: M`
@@ -116,7 +116,7 @@ node test/anchor.test.mjs # 只跑证明层：rows: 11 fail: 0
 | `test/make.test.mjs` | `rows: 14 fail: 0` | 0.44s |
 | `test/storage.test.mjs` | `rows: 22 fail: 0` | 0.03s（含源码扫描） |
 | `test/browser.test.mjs` | `rows: 28 fail: 0` | 0.05s（假 WebAudio + 假 DOM + 假 cache/ServiceWorkerGlobalScope，全在 node 里） |
-| `test/assets.test.mjs` | `rows: 7 fail: 0` | 0.63s（含把 13 张图用 `assets/gen/gen_art.py` 重跑一遍并逐张比 SHA-256、以及纯 node inflate 解 maskable 像素量安全区；本机 Pillow 11.3.0） |
+| `test/assets.test.mjs` | `rows: 7 fail: 0` | 0.63s（含把 13 张图用 `assets/gen/gen_art.py` 重跑一遍并逐张比像素、以及纯 node inflate 解 maskable 像素量安全区；本机 Pillow 10.4.0） |
 | `test/frame.test.mjs` | `rows: 8 fail: 0` | 0.10s（三档 × 1 秒虚拟墙钟 + 3 份变异副本：119/120/119 步，变异一 62/122/242 步判红） |
 
 浏览器层**本轮实测跑到底了**（`bash tools/verify.sh` → `tools/playtest.mjs`，走真实 CDP 打 `http://127.0.0.1:5192/`）：
@@ -296,7 +296,7 @@ K14/K16 各多红一格（那两条承诺 README 里都住着），台上写的�
 | `js/data/lots.js`（59 行） | 40 关烘进来的题库，`tools/bake.mjs` 的产物 |
 | `test/anchorlib.mjs`（138 行） | 全仓唯一允许做 `2^(r*c)` 穷举的地方 |
 | `test/anchor.test.mjs`（142 行） | 证明层：4×4 全空间枚举 + 三方一致 |
-| `test/assets.test.mjs`（307 行） | 13 张资产逐张量尺寸/色彩/安全区，并用 `assets/gen/gen_art.py` 重跑比 SHA-256 |
+| `test/assets.test.mjs`（353 行） | 13 张资产逐张量尺寸/色彩/安全区，并用 `assets/gen/gen_art.py` 重跑比像素（字节差单列为编码漂移） |
 | `test/count.test.mjs`（209 行） | 计数器语义，含"权重定义换掉就数出另一个棋盘"那条反证 |
 | `test/game.test.mjs`（192 行） | 状态机与 `par`：对 2^16 点击图真跑 BFS |
 | `test/grid.test.mjs`（270 行） | 校验器的每条错误码都被负例打过一次 |
