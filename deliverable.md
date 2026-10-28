@@ -140,7 +140,7 @@ ours 侧的 `audio.js` 也是这个导出形状 —— 仓里本来就有的缺�
 | `test/assets.test.mjs` | og/twitter 检查改成剥前缀后落地查文件 |
 | `tools/playtest.mjs` | `settlePx()`；像素断言改「可见差异为零」；失败详情补 `cells`/`nonZero` |
 | `tools/docs-test.mjs` | D9d 的套件数期望值 8→11（提成 `EXPECT_SUITES`） |
-| `tools/deploy-set.mjs` | `EXPECT_CHECKS` 33→37、`EXPECT_ROWS` 52→63 |
+| `tools/deploy-set.mjs` | `EXPECT_CHECKS` 33→37（2026-10-28 art 批次后又重钉到 39）、`EXPECT_ROWS` 52→63（重钉到 65） |
 | `README.md` / `DESIGN.md` | 文档数字钉与锚点重新对账 |
 | `deliverable.md` | 本文件 |
 
@@ -171,8 +171,8 @@ $ bash tools/verify.sh
 === @reloaded ===  rows: 6 fail: []
 === @pointer ===   rows: 36 fail: []
 rows: 30 fail: 0                        （文档腿）
-部署集：37 条引用（含 6 张位图尺寸核对），失败 0 项
-rows: 63 fail: 0
+部署集：39 条引用（含 6 张位图尺寸核对），失败 0 项
+rows: 65 fail: 0
 DS_SELFTEST rc=0（0=每一刀都按预期发力、阴性对照按预期不发力）
 === ALL GREEN ===
 ```

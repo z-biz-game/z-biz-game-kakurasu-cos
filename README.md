@@ -77,7 +77,7 @@ col clue[x] = Σ 被选中格子的 (y+1)      ← 列线索由「行号」付�
 | --- | --- | --- | --- |
 | `start` | `node server.cjs` | 是（直接起 `server.cjs`） | 打印 `数和 Kakurasu served at http://127.0.0.1:5192/  (ctrl+c to stop)`；`SIGINT` 后 `lsof` 确认端口已释放 |
 | `dev` | `node server.cjs 5192` | 与 `start` 同一条路径（只是把端口写死），未单独起 | 端口默认值 `5192` 在 `server.cjs:59` 与 `tools/verify.sh:21` 各写一次 |
-| `check` | `for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check "$f"; done && echo OK` | 是（随 `npm test`） | 打印 `OK`；同一 glob 实测展开 **36 个文件**（js 根 6 + js/core 8 + js/data 1 + server.cjs 1 + electron/main.cjs 1 + tools/*.mjs 6 + test/*.mjs 13）。这个数以前是手抄的、写着 25，差 4 个而全套绿灯——现在由 D9f 按 `package.json` 里那串 token 现场展开来对账 |
+| `check` | `for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check "$f"; done && echo OK` | 是（随 `npm test`） | 打印 `OK`；同一 glob 实测展开 **37 个文件**（js 根 7 + js/core 8 + js/data 1 + server.cjs 1 + electron/main.cjs 1 + tools/*.mjs 6 + test/*.mjs 13）。这个数以前是手抄的、写着 25，差 4 个而全套绿灯——现在由 D9f 按 `package.json` 里那串 token 现场展开来对账 |
 | `unit` | `for f in test/*.test.mjs; do node "$f"; done` | 是（随 `npm test`，也逐个跑过） | 11 个文件全绿，见下表 |
 | `test` | `npm run check && npm run unit && node tools/docs-test.mjs` | **是** | `exit 0`，交回 11 行 `rows: N fail: 0`（见下一节的逐条读数）再加本仓的文档对账汇总行 |
 | `bake` | `node tools/bake.mjs` | **否** | 它按 `[4/4] wrote 40 lots -> js/data/lots.js` 改写题库源文件（`tools/bake.mjs:263`），文档轮不动已发货的题库，所以没跑；DESIGN 里那组 `wall=206.2s` 本轮未复现 |
@@ -309,14 +309,14 @@ K14/K16 各多红一格（那两条承诺 README 里都住着），台上写的�
 | `tools/verify.sh`（154 行） | 本地整闸：node 侧 + 浏览器侧，一条命令跑完 |
 | `tools/harness.mjs`（45 行） | 九个消费者共用的 `rows: N fail: M` 打印形状 |
 | `tools/docs-test.mjs`（439 行） | 就是本节这条腿 |
-| `tools/deploy-set.mjs`（347 行） | 部署集闸：检查即将上传的那份产物 |
+| `tools/deploy-set.mjs`（349 行） | 部署集闸：检查即将上传的那份产物 |
 | `tools/deploy-set-selftest.mjs`（316 行） | 上面那道闸的阴性自证（每一类断言当场打红一次） |
 | `tools/assemble-site.sh`（31 行） | 部署产物的唯一清单，`.github/workflows/pages.yml` 与本地闸调同一支 |
 | `css/game.css`（208 行） | 唯一的样式文件，提示行 34px 的高度是预留出来的 |
 | `electron/main.cjs`（40 行） | 那份壳：仓里没有 `node_modules`，`electron` 不在 PATH |
 | `.github/workflows/ci.yml`（59 行） | CI：`npm run check` → `npm run unit` → 本闸 |
 | `.github/workflows/pages.yml`（43 行） | Pages 发布，调 `tools/assemble-site.sh` |
-| `index.html`（114 行） | 单页外壳，favicon 是内联 SVG data-URI（否则 404 进控制台） |
+| `index.html`（119 行） | 单页外壳，favicon 是内联 SVG data-URI（否则 404 进控制台） |
 | `server.cjs`（70 行） | 零依赖静态服务器，端口默认值在这里 |
 | `package.json`（48 行） | 上面「怎么跑」那一节逐条核对的那 11 条 script |
 | `DESIGN.md`（235 行） | 为什么这样实现，以及哪条约束一破就出 bug |
